@@ -3,11 +3,11 @@
 
 \brief Declaration of the CmdParser class
 
-https://www.cbica.upenn.edu/sbia/software/ <br>
+http://www.med.upenn.edu/sbia/software/ <br>
 software@cbica.upenn.edu
 
-Copyright (c) 2015 University of Pennsylvania. All rights reserved. <br>
-See COPYING file or https://www.cbica.upenn.edu/sbia/software/license.html
+Copyright (c) 2016 University of Pennsylvania. All rights reserved. <br>
+See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 
 */
 #pragma once
@@ -19,10 +19,175 @@ See COPYING file or https://www.cbica.upenn.edu/sbia/software/license.html
 #include <algorithm>
 #include <vector>
 
-#include "cbicaUtilities.h"
+enum Separator
+{
+  Param, DataType, DataRange
+};
+
+//! String separators corresponding to Separator
+#if defined(__GNUC__)  && (__GNUC__ < 5)
+static const char *SeparatorStrings[] = { ":", "%", "*" };
+#else
+static std::vector< std::string > SeparatorStrings = { ":", "%", "*" };
+#endif
+
+//! Get the Separator as a string from the enum Separator
+static inline std::string getSeparator(int enumVal)
+{
+  return SeparatorStrings[enumVal];
+}
 
 namespace cbica
 {
+  //! copied from cbicaUtilities to ensure CmdParser stays header-only
+  inline std::string stringReplace(const std::string &entireString,
+    const std::string &toReplace,
+    const std::string &replaceWith)
+  {
+    std::string return_string = entireString;
+    for (size_t pos = 0;; pos += replaceWith.length())
+    {
+      pos = return_string.find(toReplace, pos);
+      if (pos == std::string::npos)
+        break;
+
+      return_string.erase(pos, toReplace.length());
+      return_string.insert(pos, replaceWith);
+    }
+    return return_string;
+    /*
+    if( entireString.length() < toReplace.length() )
+    std::cerr << "Length of string to search < length of string to replace. Please check.\n";
+
+    return(return_string.replace(entireString.find(toReplace), toReplace.length(), replaceWith));
+    */
+  }
+
+  //====================================== Structs that need string stuff ====================================//
+  /**
+  \struct Parameter
+
+  \brief Holds individual parameter information
+
+  This is a helper struct for internal usage of different functions and classes (right now, the function ReadConfigFile()
+  and the class CmdParser() use it). It is not meant to be used from a program directly.
+  All variables are self-explanatory. Currently, a maxium of five lines of description are supported.
+  */
+  struct Parameter
+  {
+    enum Type
+    {
+      FILE, DIRECTORY, STRING, INTEGER, FLOAT, BOOLEAN, NONE
+    };
+
+    std::string laconic;
+    std::string verbose;
+    int dataType_enumCode;
+    std::string dataType_string;
+    std::string dataRange;
+    std::string descriptionLine1;
+    std::string descriptionLine2; //! defaults to blank
+    std::string descriptionLine3; //! defaults to blank
+    std::string descriptionLine4; //! defaults to blank
+    std::string descriptionLine5; //! defaults to blank
+
+    size_t length;
+
+    //! Constructor with five lines of description and enum_code for dataType
+    Parameter(const std::string &in_laconic, const std::string &in_verbose, const int &in_dataType, const std::string &in_dataRange,
+      const std::string &in_descriptionLine1, const std::string &in_descriptionLine2 = "", const std::string &in_descriptionLine3 = "",
+      const std::string &in_descriptionLine4 = "", const std::string &in_descriptionLine5 = "") :
+      laconic(in_laconic), verbose(in_verbose), dataType_enumCode(in_dataType), dataType_string(""), dataRange(in_dataRange),
+      descriptionLine1(in_descriptionLine1), descriptionLine2(in_descriptionLine2),
+      descriptionLine3(in_descriptionLine3), descriptionLine4(in_descriptionLine4), descriptionLine5(in_descriptionLine5)
+    {
+      laconic = cbica::stringReplace(laconic, "-", "");
+      laconic = cbica::stringReplace(laconic, "--", "");
+      verbose = cbica::stringReplace(verbose, "-", "");
+      verbose = cbica::stringReplace(verbose, "--", "");
+      length = laconic.length() + verbose.length();
+
+      // populate dataType_string WRT dataType_enumCode
+      switch (in_dataType)
+      {
+      case FILE:
+        dataType_string = "FILE";
+        break;
+      case DIRECTORY:
+        dataType_string = "DIRECTORY";
+        break;
+      case STRING:
+        dataType_string = "STRING";
+        break;
+      case INTEGER:
+        dataType_string = "INTEGER";
+        break;
+      case FLOAT:
+        dataType_string = "FLOAT";
+        break;
+      case BOOLEAN:
+        dataType_string = "BOOL";
+        break;
+      case NONE:
+        dataType_string = "NONE";
+        break;
+      default:
+        dataType_string = "UNKNOWN";
+        break;
+      }
+    }
+
+    //! Constructor with five lines of description and string for dataType
+    Parameter(const std::string &in_laconic, const std::string &in_verbose, const std::string &in_dataType, const std::string &in_dataRange,
+      const std::string &in_descriptionLine1, const std::string &in_descriptionLine2 = "", const std::string &in_descriptionLine3 = "",
+      const std::string &in_descriptionLine4 = "", const std::string &in_descriptionLine5 = "") :
+      laconic(in_laconic), verbose(in_verbose), dataType_enumCode(0), dataType_string(in_dataType), dataRange(in_dataRange),
+      descriptionLine1(in_descriptionLine1), descriptionLine2(in_descriptionLine2),
+      descriptionLine3(in_descriptionLine3), descriptionLine4(in_descriptionLine4), descriptionLine5(in_descriptionLine5)
+    {
+      laconic = cbica::stringReplace(laconic, "-", "");
+      laconic = cbica::stringReplace(laconic, "--", "");
+      verbose = cbica::stringReplace(verbose, "-", "");
+      verbose = cbica::stringReplace(verbose, "--", "");
+      length = laconic.length() + verbose.length();
+
+      // populate dataType_enumCode WRT dataType_string
+      if (dataType_string == "FILE")
+      {
+        dataType_enumCode = FILE;
+      }
+      else if (dataType_string == "DIRECTORY")
+      {
+        dataType_enumCode = DIRECTORY;
+      }
+      else if (dataType_string == "STRING")
+      {
+        dataType_enumCode = STRING;
+      }
+      else if (dataType_string == "INTEGER")
+      {
+        dataType_enumCode = INTEGER;
+      }
+      else if (dataType_string == "FLOAT")
+      {
+        dataType_enumCode = FLOAT;
+      }
+      else if ((dataType_string == "BOOL") || (dataType_string == "BOOLEAN"))
+      {
+        dataType_enumCode = BOOLEAN;
+      }
+      else if (dataType_string == "NONE")
+      {
+        dataType_enumCode = NONE;
+      }
+      else
+      {
+        dataType_enumCode = -1;
+      }
+    }
+
+  };
+
   /**
   \class CmdParser
 
@@ -233,9 +398,17 @@ namespace cbica
     void writeConfigFile(const std::string &dirName = "");
 
     /**
+    \brief Reads a pre-written configuration file using CmdParser::WriteConfigFile()
+
+    \param inputConfigFile Full path to the configuration file which needs to be read
+    \return Vector of the Parameter structure where laconic paramter is always empty for all variables
+    */
+    static std::vector< Parameter > readConfigFile(const std::string &inputConfigFile, bool getDescription = true);
+
+    /**
     \brief Gives a brief example of how to use the executable
-    
-    This should not contain any references to the executable name (it is automatically picked up). 
+
+    This should not contain any references to the executable name (it is automatically picked up).
     It should start directly with the parameters to be put in.
 
     \param usageOfExe A string which would correspond to the command line usage AFTER the executable has been called
@@ -268,6 +441,16 @@ namespace cbica
     Can search using both laconic and verbose parameters.
 
     \param execParamToCheck The laconic or verbose variant of the parameter
+    \param parameterValue The return value of the parameter as size_t
+    */
+    void getParameterValue(const std::string &execParamToCheck, size_t &parameterValue);
+
+    /**
+    \brief Get the value of the parameter
+
+    Can search using both laconic and verbose parameters.
+
+    \param execParamToCheck The laconic or verbose variant of the parameter
     \param parameterValue The return value of the parameter as float
     */
     void getParameterValue(const std::string &execParamToCheck, float &parameterValue);
@@ -281,6 +464,12 @@ namespace cbica
     \param parameterValue The return value of the parameter as std::string (valid for Parameter::Type::FILE, Parameter::Type::DIRECTORY, Parameter::Type::STRING)
     */
     void getParameterValue(const std::string &execParamToCheck, std::string &parameterValue);
+    
+    //! This function ensures that argc < 2 isn't checked
+    void ignoreArgc1()
+    {
+      argc1ignore = true;
+    }
 
   private:
     //! Executable name
@@ -292,7 +481,7 @@ namespace cbica
     //! CMD variable, used to ensure that 'const' based variables are taken into consideration
     int m_argc;
     //! CMD variable, used to ensure that 'const' based variables are taken into consideration
-    char **m_argv;
+    std::vector< std::string > m_argv;
     //! Collection of required and optional parameters
     std::vector< Parameter > m_requiredParameters, m_optionalParameters;
     //! Max length of parameters for echoUsage()
@@ -301,15 +490,22 @@ namespace cbica
     bool checkMaxLen;
     //! Flag to check for requested help/usage
     bool helpRequested;
+    //! Flag to check for requested help/usage
+    bool firstRun;
+    //! check argc stuff internally
+    bool argc1ignore;
+    //! Initialize the class
+    inline void initializeClass(int &input_argc, std::vector< std::string > &input_argv, const std::string &input_exeName = "");
     //! Get max length
     inline void getMaxLength();
     //! Internal function to check for verbose parameter
     inline void verbose_check(std::string &input_string);
     //! Internal function to write vector of parameters
     inline void writeParameters(const std::vector< Parameter > &inputParameters, bool verbose);
-    
+
     size_t m_maxLaconicLength, //! maximum length of laconic parameters
-      m_minVerboseLength; //! maximum length of verbose parameters
+      m_minVerboseLength,
+      m_maxVerboseLength; //! maximum length of verbose parameters
 
   };
 }

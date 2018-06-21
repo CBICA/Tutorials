@@ -19,6 +19,8 @@ ADD_EXECUTABLE(
   ${PROJECT_NAME} 
   ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cxx
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaITKSafeImageIO.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaITKImageInfo.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaITKImageInfo.cpp # this is not a template class
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaUtilities.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaUtilities.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaCmdParser.h

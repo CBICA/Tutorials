@@ -28,6 +28,8 @@
 #include "cbicaCmdParser.h"
 #include "cbicaITKSafeImageIO.h"
 
+#include "TestITK.h"
+
 // main entry of program
 int main(int argc, char *argv[])
 {
