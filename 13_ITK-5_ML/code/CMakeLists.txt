@@ -23,6 +23,8 @@ ADD_EXECUTABLE(
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaUtilities.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaCmdParser.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cbicaCmdParser.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/TestITK.h # example on how to write a templated class
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/TestITK.hxx # example on how to write a templated class
 )
 
 # Link the libraries to be used

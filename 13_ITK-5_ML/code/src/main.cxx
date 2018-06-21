@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
     }
 
     ////// start teaching the machine
-    cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create(); // create a new instance of cv::ml::SVM (http://docs.opencv.org/3.0-beta/modules/ml/doc/support_vector_machines.html)
+    auto svm = cv::ml::SVM::create(); // create a new instance of cv::ml::SVM (http://docs.opencv.org/3.0-beta/modules/ml/doc/support_vector_machines.html)
 
     // set up the SVM parameters (http://docs.opencv.org/3.0-beta/modules/ml/doc/support_vector_machines.html#svm-params-params)
     svm->setType(cv::ml::SVM::C_SVC); 
