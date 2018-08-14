@@ -30,3 +30,5 @@
 *.exe
 *.out
 *.app
+bin
+/19_ITK-5_PipelineConstruction/~$ITK-Pipeline.pptx
