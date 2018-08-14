@@ -104,34 +104,34 @@ int main(int argc, char *argv[])
   try // to catch exceptions
   {
     // basic check to see image file has been put in by the user
-    if( (argc < 2) || (argc > 2) )
+    if( (argc < 3) || (argc > 4) )
     {
       std::cerr << "Usage: " << std::endl;
       echoUsage(argv[0]);
       return EXIT_FAILURE;
     }
 
-    inputFile = argv[2];
-    referenceFile = argv[3];
-    outputFile = argv[4];
+    inputFile = argv[1];
+    referenceFile = argv[2];
+    outputFile = argv[3];
 
-    auto im_base = itk::ImageIOFactory::CreateImageIO(inputFile.c_str(), itk::ImageIOFactory::ReadMode);
-    im_base->ReadImageInformation();
+    //auto im_base = itk::ImageIOFactory::CreateImageIO(inputFile.c_str(), itk::ImageIOFactory::ReadMode);
+    //im_base->ReadImageInformation();
 
-    auto im_base_2 = itk::ImageIOFactory::CreateImageIO(referenceFile.c_str(), itk::ImageIOFactory::ReadMode);
-    im_base_2->ReadImageInformation();
+    //auto im_base_2 = itk::ImageIOFactory::CreateImageIO(referenceFile.c_str(), itk::ImageIOFactory::ReadMode);
+    //im_base_2->ReadImageInformation();
 
-    // perform basic sanity check
-    if (im_base->GetNumberOfDimensions() != 3)
-    {
-      std::cerr << "Unsupported Image Dimension. Only 3D images are currently supported.\n";
-      return EXIT_FAILURE;
-    }
-    if (im_base_2->GetNumberOfDimensions() != 3)
-    {
-      std::cerr << "Unsupported Image Dimension. Only 3D images are currently supported.\n";
-      return EXIT_FAILURE;
-    }
+    //// perform basic sanity check
+    //if (im_base->GetNumberOfDimensions() != 3)
+    //{
+    //  std::cerr << "Unsupported Image Dimension. Only 3D images are currently supported.\n";
+    //  return EXIT_FAILURE;
+    //}
+    //if (im_base_2->GetNumberOfDimensions() != 3)
+    //{
+    //  std::cerr << "Unsupported Image Dimension. Only 3D images are currently supported.\n";
+    //  return EXIT_FAILURE;
+    //}
 
     std::cout << "Starting pipeline.\n";
 
