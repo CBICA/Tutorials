@@ -2,14 +2,16 @@
 \brief ITK Segmentation Tutorial
 */
 
+#include <chrono>
 //! ITK headers
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
 #include "itkCastImageFilter.h"
 #include "itkConnectedThresholdImageFilter.h"
-
+#include "itkDiscreteGaussianImageFilter.h"
 #include "itkHistogramMatchingImageFilter.h"
+#include "itkOtsuThresholdImageFilter.h"
 #include "itkCastImageFilter.h"
 #include "itkEllipseSpatialObject.h"
 #include "itkImage.h"
@@ -25,7 +27,7 @@
 #include "itkAffineTransform.h"
 #include "itkNearestNeighborInterpolateImageFunction.h"
 
-
+std::string inputFile, referenceFile, outputFile;
 
 /**
 \brief Get the itk::Image
@@ -34,7 +36,7 @@
 \param File name of the image
 */
 template <class TImageType>
-void SafeReadImage(typename TImageType::Pointer image, const std::string &fName)
+typename TImageType::Pointer SafeReadImage(const std::string &fName)
 {
   typedef TImageType ImageType;
   typedef itk::ImageFileReader< ImageType > ImageReaderType;
@@ -48,11 +50,10 @@ void SafeReadImage(typename TImageType::Pointer image, const std::string &fName)
   catch (itk::ExceptionObject& e)
   {
     std::cerr << "Exception caught: " << e.what() << "\n";
-    return;
+    return typename TImageType::New();
   }
 
-  image->Graft(reader->GetOutput());
-  return;
+  return reader->GetOutput();
 }
 
 /**
@@ -62,55 +63,44 @@ void SafeReadImage(typename TImageType::Pointer image, const std::string &fName)
 \param outputFileName File name of output
 */
 template <typename TImageType>
-void PipelineFilter(typename TImageType::Pointer image, const std::string &outputFileName)
+void PipelineFilter()
 {
-  auto filter = itk::HistogramMatchingImageFilter< TImageType, TImageType >::New();
-  filter->SetInput(inputImage);
-  filter->SetReferenceImage(referenceImage);
-  if (numberOfHistogramLevels != 100)
-  {
-    filter->SetNumberOfHistogramLevels(numberOfHistogramLevels);
-  }
-  filter->ThresholdAtMeanIntensityOn();
-  filter->SetNumberOfMatchPoints(numberOfMatchPoints);
-  filter->Update();
+  // histogram matching
+  auto histoMatch = itk::HistogramMatchingImageFilter< TImageType, TImageType >::New();
+  histoMatch->SetInput(SafeReadImage< TImageType >(inputFile));
+  histoMatch->SetReferenceImage(SafeReadImage< TImageType >(referenceFile));
+  histoMatch->SetNumberOfHistogramLevels(125);
+  histoMatch->ThresholdAtMeanIntensityOn();
+  histoMatch->SetNumberOfMatchPoints(100);
+  histoMatch->Update();
 
-  typedef itk::Image<short, 3> OImageType;
-  typedef itk::ConnectedThresholdImageFilter<TImageType, OImageType> ConnectedFilterType;
-  typename ConnectedFilterType::Pointer filter = ConnectedFilterType::New();
-  filter->SetInput(image);
+  // gaussian filter
+  auto gaussianFilter = itk::DiscreteGaussianImageFilter< TImageType, TImageType >::New();
+  gaussianFilter->SetInput(histoMatch->GetOutput());
+  gaussianFilter->SetVariance(5.0);
+  gaussianFilter->Update();
 
-  filter->SetReplaceValue(1000);
-  filter->SetLower(1100);
-  filter->SetUpper(2000);
-
-  typename TImageType::IndexType index;
-  // place a random seed point - values are in accordance with example data
-  index[0] = 90;
-  index[1] = 120;
-  index[2] = 67;
-
-  filter->AddSeed(index);
-  //filter->AddSeed(index);
-  filter->Update();
-
-  typedef itk::ImageFileWriter<OImageType> WriterType;
-  WriterType::Pointer writer = WriterType::New();
-  writer->SetFileName(outputFileName);
-
-  writer->SetInput(filter->GetOutput());
+  // otsu threshold
+  auto otsuThreshold = itk::OtsuThresholdImageFilter< TImageType, TImageType >::New();
+  otsuThreshold->SetInput(gaussianFilter->GetOutput());
+  otsuThreshold->Update();
+  
+  auto writer = itk::ImageFileWriter< TImageType >::New();
+  writer->SetFileName(outputFile);
+  writer->SetInput(otsuThreshold->GetOutput());
   writer->Update();
 }
 
 void echoUsage(const std::string &exeName)
 {
-  std::cout << exeName << " <inputImageFile> <outputFileName>\n" <<
+  std::cout << exeName << " <inputImageFile> <referenceImageFile> <outputFileName>\n" <<
     "NOTE - Only 3D images are supported in this example.\n";
 }
 
 // main entry of program
 int main(int argc, char *argv[])
 {
+  auto t1 = std::chrono::high_resolution_clock::now();
   try // to catch exceptions
   {
     // basic check to see image file has been put in by the user
@@ -121,37 +111,39 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
     }
 
-    std::string inputFName1 = "", outputFName = "";
+    inputFile = argv[2];
+    referenceFile = argv[3];
+    outputFile = argv[4];
 
-    inputFName1 = argv[2];
-    outputFName = argv[3];
-
-    itk::ImageIOBase::Pointer im_base = itk::ImageIOFactory::CreateImageIO(inputFName1.c_str(), itk::ImageIOFactory::ReadMode);
-    im_base->SetFileName(inputFName1);
+    auto im_base = itk::ImageIOFactory::CreateImageIO(inputFile.c_str(), itk::ImageIOFactory::ReadMode);
     im_base->ReadImageInformation();
-    
+
+    auto im_base_2 = itk::ImageIOFactory::CreateImageIO(referenceFile.c_str(), itk::ImageIOFactory::ReadMode);
+    im_base_2->ReadImageInformation();
+
     // perform basic sanity check
     if (im_base->GetNumberOfDimensions() != 3)
     {
       std::cerr << "Unsupported Image Dimension. Only 3D images are currently supported.\n";
       return EXIT_FAILURE;
     }
+    if (im_base_2->GetNumberOfDimensions() != 3)
+    {
+      std::cerr << "Unsupported Image Dimension. Only 3D images are currently supported.\n";
+      return EXIT_FAILURE;
+    }
 
-    typedef float PixelType; // default pixel type is float, all voxel data is static-casted
-    typedef itk::Image<PixelType, 3> ImageType; // define image type
-    ImageType::Pointer image_1 = ImageType::New(); // initialize new image
-    SafeReadImage<ImageType>(image_1, im_base->GetFileName()); // read image along with exceptions
-    
-    std::cout << "Doing connectivity segmentation...\n";
-    segmentationFilter<ImageType>(image_1, outputFName);
-    
+    std::cout << "Starting pipeline.\n";
+
+    PipelineFilter< itk::Image< float, 3 > >();
   }
   catch (itk::ExceptionObject &error)
   {
     std::cerr << "Exception caught: " << error << "\n";
     return EXIT_FAILURE;
   }
-  
-  std::cout << "Finished successfully.\n";
+
+  auto t2 = std::chrono::high_resolution_clock::now();
+  std::cout << "Finished successfully in " << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " milliseconds\n";
   return EXIT_SUCCESS;
 }
