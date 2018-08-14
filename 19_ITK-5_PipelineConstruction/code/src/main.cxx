@@ -50,7 +50,7 @@ typename TImageType::Pointer SafeReadImage(const std::string &fName)
   catch (itk::ExceptionObject& e)
   {
     std::cerr << "Exception caught: " << e.what() << "\n";
-    return typename TImageType::New();
+    return reader->GetOutput();
   }
 
   return reader->GetOutput();
