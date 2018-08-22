@@ -9,7 +9,7 @@
 
 #include "cbicaCmdParser.h"
 #include "cbicaUtilities.h"
-#include "cbicaITKWriteImage.h"
+#include "cbicaITKSafeImageIO.h"
 
 #include "BasicApp.h"
 
