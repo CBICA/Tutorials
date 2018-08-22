@@ -5,41 +5,50 @@
 
 Dependecies: OpenMP
 
-https://www.cbica.upenn.edu/sbia/software/ <br>
+http://www.med.upenn.edu/sbia/software/ <br>
 software@cbica.upenn.edu
 
-\author Sarthak Pati
-
-Copyright (c) 2015 University of Pennsylvania. All rights reserved. <br>
-See COPYING file or https://www.cbica.upenn.edu/sbia/software/license.html
+Copyright (c) 2018 University of Pennsylvania. All rights reserved. <br>
+See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 
 */
 #if (_WIN32)
-  #define NOMINMAX
-	#include <direct.h>
-  #include <windows.h>
-  #include <conio.h>
-  #include <lmcons.h>
-  #include <Shlobj.h>
-  #include <filesystem>
-  #define GetCurrentDir _getcwd
-  bool WindowsDetected = true;
-  static const char  cSeparator  = '\\';
+#define NOMINMAX
+#include <direct.h>
+#include <windows.h>
+#include <conio.h>
+#include <lmcons.h>
+#include <Shlobj.h>
+#include <filesystem>
+#include <psapi.h>
+#define GetCurrentDir _getcwd
+bool WindowsDetected = true;
+static const char  cSeparator = '\\';
 //  static const char* cSeparators = "\\/";
 #else
-  #include <dirent.h>
-  #include <unistd.h>
-  #include <libgen.h>
-  #include <limits.h>
-  #include <cstring>
-  #include <cstdlib>
-  #include <sys/types.h>
-  #include <errno.h>
-  #include <ftw.h>
-  #define GetCurrentDir getcwd
-  bool WindowsDetected = false;
-  static const char  cSeparator  = '/';
+#include <dirent.h>
+#include <unistd.h>
+#include <libgen.h>
+#include <limits.h>
+#include <cstring>
+#include <cstdlib>
+#include <sys/types.h>
+#include <errno.h>
+#include <ftw.h>
+#define GetCurrentDir getcwd
+bool WindowsDetected = false;
+static const char  cSeparator = '/';
 //  static const char* cSeparators = "/";
+#endif
+
+#if defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/sysinfo.h>
+#endif
+#if defined(BSD)
+#include <sys/sysctl.h>
 #endif
 
 #include <fstream>
@@ -53,24 +62,28 @@ See COPYING file or https://www.cbica.upenn.edu/sbia/software/license.html
 #include <stdexcept>
 #include <algorithm>
 #include <string>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
+#include <thread>
 
 #include "cbicaUtilities.h"
+#include "yaml-cpp/yaml.h"
 
 namespace cbica
 {
   //====================================== Folder stuff ====================================//
 
-  bool fileExists( const std::string &fName )
+  bool fileExists(const std::string &fName)
   {
     std::ifstream file_exists(fName.c_str());
-    if( file_exists.good() )
+    if (file_exists.good())
       return true;
     else
       return false;
   }
-  
-  bool directoryExists( const std::string &dName )
+
+  bool directoryExists(const std::string &dName)
   {
     struct stat info;
     std::string dName_Wrap = dName;
@@ -79,15 +92,15 @@ namespace cbica
     {
       dName_Wrap.erase(dName_Wrap.end() - 1);
     }
-    
+
     if (stat(dName_Wrap.c_str(), &info) != 0)
       return false;
-    else if( info.st_mode & S_IFDIR )  // S_ISDIR() doesn't exist on windows
+    else if (info.st_mode & S_IFDIR)  // S_ISDIR() doesn't exist on windows
       return true;
     else
       return false;
   }
-  
+
   bool isFile(const std::string &path)
   {
     return cbica::fileExists(path);
@@ -101,36 +114,67 @@ namespace cbica
   bool exists(const std::string &path)
   {
     struct stat info;
-    
-    if( stat( path.c_str(), &info ) != 0 )
-        return false;
-    else if( info.st_mode & S_IFDIR )  // S_ISDIR() doesn't exist on my windows
-        return true;
+
+    if (stat(path.c_str(), &info) != 0)
+      return false;
+    else if (info.st_mode & S_IFDIR)  // S_ISDIR() doesn't exist on my windows
+      return true;
     else
-        return true;
+      return true;
+  }
+
+  std::string getEnvironmentVariableValue(const std::string &environmentVariable)
+  {
+    std::string returnString = "";
+    char tempValue[FILENAME_MAX];
+#if defined(_WIN32)
+    char tmp[FILENAME_MAX];
+    size_t size = FILENAME_MAX;
+    getenv_s(&size, tmp, size, environmentVariable.c_str()); // does not work, for some reason - needs to be tested
+    std::string temp = cbica::replaceString(tmp, "\\", "/");
+    sprintf_s(tempValue, static_cast<size_t>(FILENAME_MAX), "%s", temp.c_str());
+    tmp[0] = '\0';
+#else
+    char *tmp;
+    tmp = std::getenv(environmentVariable.c_str());
+    sprintf(tempValue, "%s", tmp);
+#endif
+
+    returnString = std::string(tempValue);
+    tempValue[0] = '\0';
+
+    return returnString;
+  }
+
+  std::string getCurrentProcessID()
+  {
+    return std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
   }
 
   std::string createTmpDir()
   {
-    std::string returnDir = "", tempCheck;
-    char *tmp;
-    char tempPath[FILENAME_MAX];
+    std::string returnDir = "", tempCheck, homeEnv;
 #if defined(_WIN32)
-    //size_t size;
-    tmp = getenv("USERPROFILE");
-    //getenv_s(&size, tmp, size, "USERPROFILE"); // does not work, for some reason - needs to be tested
-    std::string temp = cbica::replaceString(tmp, "\\", "/");
-    sprintf_s(tempPath, static_cast<size_t>(FILENAME_MAX), "%s", temp.c_str());
-    strcat_s(tempPath, "/tmp");
+    homeEnv = "USERPROFILE";
 #else
-    tmp = std::getenv("HOME");
-    sprintf(tempPath, "%s", tmp);
-    strcat(tempPath, "/tmp");
+    homeEnv = "HOME";
 #endif    
 
-    tempCheck = std::string(tempPath);
-    tmp[0] = '\0';
-    tempPath[0] = '\0';
+    auto exeTempDir = cbica::getEnvironmentVariableValue(homeEnv) + "/.cbicaTemp/"/* + cbica::getExecutableName()*/;
+    if (!directoryExists(exeTempDir))
+    {
+      createDir(exeTempDir);
+      auto temp = cbica::stringSplit(cbica::getCurrentLocalTime(), ":");
+    }
+
+    tempCheck = exeTempDir + "/tmp_" + getCurrentProcessID();
+
+    if (cbica::directoryExists(tempCheck))
+    {
+      auto temp = cbica::stringSplit(cbica::getCurrentLocalTime(), ":");
+      tempCheck += temp[0] + temp[1] + temp[2] + "/";
+    }
+
     if (isDir(tempCheck))
     {
       for (size_t i = 1; i <= FILENAME_MAX; i++)
@@ -156,7 +200,7 @@ namespace cbica
 
     return returnDir;
   }
-  
+
   std::string createTemporaryDirectory()
   {
     return createTmpDir();
@@ -172,27 +216,27 @@ namespace cbica
     return createTmpDir();
   }
 
-  bool createDir( const std::string &dir_name )
+  bool createDir(const std::string &dir_name)
   {
-      //! Pure c++ based directory creation
-    #if defined(_WIN32)
-      DWORD ftyp = GetFileAttributesA(dir_name.c_str()); // check if directory exists or not
-      if (ftyp == INVALID_FILE_ATTRIBUTES)
-    	  _mkdir(dir_name.c_str());
-      return true;
-    #else
-      DIR *pDir;
-      pDir = opendir(dir_name.c_str()); // check if directory exists or not
-      if (pDir == NULL)
-    	  mkdir(dir_name.c_str(), 0777);
-      return true;
-    #endif
+    //! Pure c++ based directory creation
+#if defined(_WIN32)
+    DWORD ftyp = GetFileAttributesA(dir_name.c_str()); // check if directory exists or not
+    if (ftyp == INVALID_FILE_ATTRIBUTES)
+      _mkdir(dir_name.c_str());
+    return true;
+#else
+    DIR *pDir;
+    pDir = opendir(dir_name.c_str()); // check if directory exists or not
+    if (pDir == NULL)
+      mkdir(dir_name.c_str(), 0777);
+    return true;
+#endif
     return false;
   }
 
   bool makeDir(const std::string &dir_name)
   {
-    return createDir( dir_name );
+    return createDir(dir_name);
   }
 
   bool createDirectory(const std::string &dir_name)
@@ -217,101 +261,101 @@ namespace cbica
       std::cerr << "Supplied directory name wasn't found.\n";
       exit(EXIT_FAILURE);
     }
-    #if defined(_WIN32)
-      bool bSubdirectory = false;       // Flag, indicating whether
-                                        // subdirectories have been found
-      HANDLE hFile;                     // Handle to directory
-      std::string strFilePath;          // Filepath
-      std::string strPattern;           // Pattern
-      WIN32_FIND_DATA FileInformation;  // File information    
-    
-      strPattern = dirname + "/*.*";
-      hFile = ::FindFirstFile(strPattern.c_str(), &FileInformation);
-      if(hFile != INVALID_HANDLE_VALUE)
+#if defined(_WIN32)
+    bool bSubdirectory = false;       // Flag, indicating whether
+    // subdirectories have been found
+    HANDLE hFile;                     // Handle to directory
+    std::string strFilePath;          // Filepath
+    std::string strPattern;           // Pattern
+    WIN32_FIND_DATA FileInformation;  // File information    
+
+    strPattern = dirname + "/*.*";
+    hFile = ::FindFirstFile(strPattern.c_str(), &FileInformation);
+    if (hFile != INVALID_HANDLE_VALUE)
+    {
+      do
       {
-        do
+        if (FileInformation.cFileName[0] != '.')
         {
-          if(FileInformation.cFileName[0] != '.')
+          strFilePath.erase();
+          strFilePath = dirname + "/" + FileInformation.cFileName;
+
+          if (FileInformation.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
           {
-            strFilePath.erase();
-            strFilePath = dirname + "/" + FileInformation.cFileName;
-    
-            if(FileInformation.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            if (bDeleteSubdirectories)
             {
-              if(bDeleteSubdirectories)
-              {
-                // Delete subdirectory
-                int iRC = cbica::removeDirectoryRecursively(strFilePath, bDeleteSubdirectories);
-                if(iRC)
-                  return iRC;
-              }
-              else
-                bSubdirectory = true;
+              // Delete subdirectory
+              int iRC = cbica::removeDirectoryRecursively(strFilePath, bDeleteSubdirectories);
+              if (iRC)
+                return iRC;
             }
             else
-            {
-              // Set file attributes
-              if(::SetFileAttributes(strFilePath.c_str(),
-                                     FILE_ATTRIBUTE_NORMAL) == FALSE)
-                return ::GetLastError();
-    
-              // Delete file
-              if(::DeleteFile(strFilePath.c_str()) == FALSE)
-                return ::GetLastError();
-            }
+              bSubdirectory = true;
           }
-        } while(::FindNextFile(hFile, &FileInformation) == TRUE);
-    
-        // Close handle
-        ::FindClose(hFile);
-    
-        DWORD dwError = ::GetLastError();
-        if(dwError != ERROR_NO_MORE_FILES)
-          return dwError;
-        else
-        {
-          if(!bSubdirectory)
+          else
           {
-            // Set directory attributes
-            if(::SetFileAttributes(dirname.c_str(),
-                                   FILE_ATTRIBUTE_NORMAL) == FALSE)
+            // Set file attributes
+            if (::SetFileAttributes(strFilePath.c_str(),
+              FILE_ATTRIBUTE_NORMAL) == FALSE)
               return ::GetLastError();
-    
-            // Delete directory
-            if(::RemoveDirectory(dirname.c_str()) == FALSE)
+
+            // Delete file
+            if (::DeleteFile(strFilePath.c_str()) == FALSE)
               return ::GetLastError();
           }
         }
+      } while (::FindNextFile(hFile, &FileInformation) == TRUE);
+
+      // Close handle
+      ::FindClose(hFile);
+
+      DWORD dwError = ::GetLastError();
+      if (dwError != ERROR_NO_MORE_FILES)
+        return dwError;
+      else
+      {
+        if (!bSubdirectory)
+        {
+          // Set directory attributes
+          if (::SetFileAttributes(dirname.c_str(),
+            FILE_ATTRIBUTE_NORMAL) == FALSE)
+            return ::GetLastError();
+
+          // Delete directory
+          if (::RemoveDirectory(dirname.c_str()) == FALSE)
+            return ::GetLastError();
+        }
       }
-    
-      return 0;
-    #else   
-    std::string passString = "rm -r " + dirname;
-    system(passString.c_str());
-    #endif
-      return 0;
+    }
+
+    return 0;
+#else   
+    std::string passString = "rm -rf " + dirname;
+    if (std::system(passString.c_str()) != 0)
+      std::cerr << "Error during delete.\n";
+#endif
+    return 0;
   }
 
   bool removeDir(const std::string &path)
   {
-    if( removeDirectoryRecursively(path, true) != 0 )
-      return false;
-    return true;
+    return deleteDir(path);
   }
-  
+
   bool deleteDir(const std::string &path)
   {
-    if( removeDirectoryRecursively(path, true) != 0 )
-      return false;
-    return true;
+    //if (removeDirectoryRecursively(path, true) != 0)
+    //  return false;
+    //return true;
     //return removeDirectoryRecursively(path);
-    /*#if defined(_WIN32)
+#if defined(_WIN32)
     if (_rmdir(path.c_str()) == -1)
       return false;
-    #else
-    std::string passString = "rm -r " + path;
-    system(passString.c_str());
-    #endif*/
+#else
+    std::string passString = "rmdir " + path;
+    if (system(passString.c_str()) != 0)
+      return false;
+    #endif
 
     return true;
   }
@@ -335,7 +379,7 @@ namespace cbica
       {
         source_tmp.append("/");
       }
-      
+
       // check for all files inside 
       source_tmp.append("*");
 
@@ -378,25 +422,25 @@ namespace cbica
       //system(std::string("cp " + recur + " " + inputFolder + " " + destination).c_str());
 
       DIR *dir = opendir(inputFolder.c_str());                //Assuming absolute pathname here.
-      if (dir) 
+      if (dir)
       {
         char Path[256], *EndPtr = Path;
         struct dirent *e;
         strcpy(Path, inputFolder.c_str());                  //Copies the current path to the 'Path' variable.
         EndPtr += strlen(inputFolder.c_str());              //Moves the EndPtr to the ending position.
         while ((e = readdir(dir)) != NULL) //Iterates through the entire directory
-        {  
+        {
           struct stat info;                //Helps us know about stuff
           strcpy(EndPtr, e->d_name);       //Copies the current filename to the end of the path, overwriting it with each loop.
           if (!stat(Path, &info)) //stat returns zero on success.
-          {         
+          {
             if (S_ISDIR(info.st_mode)) //Are we dealing with a directory?
-            {  
+            {
               //Make corresponding directory in the target folder here.
               copyDir(Path, EndPtr);   //Calls this function AGAIN, this time with the sub-name.
             }
             else if (S_ISREG(info.st_mode)) //Or did we find a regular file?
-            { 
+            {
               copyFile(Path, EndPtr);
             }
           }
@@ -465,7 +509,7 @@ namespace cbica
     myfile.seekg(0, std::ios::end);
     end = myfile.tellg();
     myfile.close();
-    
+
     return (end - begin);
 
     /* // if using filesystem
@@ -474,24 +518,54 @@ namespace cbica
     */
   }
 
+  bool IsCompatible(const std::string inputVersionFile)
+  {
+    auto config = YAML::LoadFile(inputVersionFile);
+
+    auto currentCollectionVersion = std::stoi(cbica::replaceString(config["Version"].as< std::string >().c_str(), ".", "").c_str());
+    auto minimumVersion = std::stoi(cbica::replaceString(config["Minimum"].as< std::string >().c_str(), ".", "").c_str());
+    auto maximumVersion = std::stoi(cbica::replaceString(config["Maximum"].as< std::string >().c_str(), ".", "").c_str());
+    auto currentPackageVersion = std::stoi(cbica::replaceString(std::string(PROJECT_VERSION), ".", "").c_str());
+
+    if (currentPackageVersion == currentCollectionVersion)
+    {
+      return true;
+    }
+    if (currentPackageVersion < minimumVersion)
+    {
+      return false;
+    }
+    if (currentPackageVersion > maximumVersion)
+    {
+      return false;
+    }
+
+    return true;
+  }
+
   size_t getFolderSize(const std::string &rootFolder)
   {
     size_t f_size = 0;
-#ifdef _WIN32
-    std::tr2::sys::path folderPath(rootFolder);
+#if _WIN32
+    std::experimental::filesystem::path folderPath(rootFolder);
     if (exists(folderPath))
     {
-      std::tr2::sys::directory_iterator end_itr;
-      for (std::tr2::sys::directory_iterator dirIte(rootFolder); dirIte != end_itr; ++dirIte)
+		std::experimental::filesystem::directory_iterator end_itr;
+      for (std::experimental::filesystem::directory_iterator dirIte(rootFolder); dirIte != end_itr; ++dirIte)
       {
-        std::tr2::sys::path filePath(complete(dirIte->path(), folderPath));
+		  std::experimental::filesystem::path filePath;
+#if (_MSC_VER >= 1900)
+        filePath = std::experimental::filesystem::system_complete(dirIte->path());
+#else
+        filePath = complete(dirIte->path(), folderPath);
+#endif
         if (!is_directory(dirIte->status()))
         {
           f_size += file_size(filePath);
         }
         else
         {
-          f_size += getFolderSize(filePath);
+          f_size += getFolderSize(filePath.string());
         }
       }
     }
@@ -507,7 +581,7 @@ namespace cbica
     int exists;
 
     d = opendir(".");
-    if (d == NULL) 
+    if (d == NULL)
     {
       perror("prsize");
       exit(1);
@@ -515,14 +589,14 @@ namespace cbica
 
     f_size = 0;
 
-    for (de = readdir(d); de != NULL; de = readdir(d)) 
+    for (de = readdir(d); de != NULL; de = readdir(d))
     {
       exists = stat(de->d_name, &buf);
-      if (exists < 0) 
+      if (exists < 0)
       {
         fprintf(stderr, "Couldn't stat %s\n", de->d_name);
       }
-      else 
+      else
       {
         f_size += buf.st_size;
       }
@@ -543,75 +617,89 @@ namespace cbica
   }
 
   //======================================== OS stuff ======================================//
-  
+
   std::string getFilenameBase(const std::string &filename, bool checkFile)
   {
     if (checkFile)
     {
       if (!fileExists(filename))
       {
-        std::cerr << "Supplied file name wasn't found.\n";
+        std::cerr << "Supplied file name '" << filename << "' wasn't found.\n";
         exit(EXIT_FAILURE);
       }
     }
     std::string path, base, ext;
     splitFileName(filename, path, base, ext);
-    
+
     return base;
-	}
-	
+  }
+
   std::string getFilenameExtension(const std::string &filename, bool checkFile)
   {
     if (checkFile)
     {
       if (!fileExists(filename))
       {
-        std::cerr << "Supplied file name wasn't found.\n";
+        std::cerr << "Supplied file name '" << filename << "' wasn't found.\n";
         exit(EXIT_FAILURE);
       }
     }
     std::string path, base, ext;
     splitFileName(filename, path, base, ext);
-    
+
     return ext;
   }
 
   std::string getFilenamePath(const std::string &filename, bool checkFile)
   {
-    if (checkFile)
+    if (directoryExists(filename))
     {
-      if (!fileExists(filename))
-      {
-        std::cerr << "Supplied file name wasn't found.\n";
-        exit(EXIT_FAILURE);
-      }
+      return filename;
     }
-    std::string path, base, ext;
-    splitFileName(filename, path, base, ext);
-    
-    return path;
+    else
+    {
+      if (checkFile)
+      {
+        if (!fileExists(filename))
+        {
+          std::cerr << "Supplied file name '" << filename << "' wasn't found.\n";
+          exit(EXIT_FAILURE);
+        }
+      }
+      std::string path, base, ext;
+      splitFileName(filename, path, base, ext);
+
+      return path;
+    }
   }
 
   std::string getExecutableName()
   {
     std::string return_string;
-    #if defined(_WIN32)
-    	//! Initialize pointers to file and user names
-    	char filename[FILENAME_MAX];
-	    GetModuleFileNameA(NULL, filename, FILENAME_MAX);
-      std::string path, ext;
-      splitFileName(filename, path, return_string, ext);
-      //_splitpath_s(filename, NULL, NULL, NULL, NULL, filename, NULL, NULL, NULL);
-    #else
-    	//! Initialize pointers to file and user names
-    	char *filename, filename_2[FILENAME_MAX];    
-    	::readlink("/proc/self/exe", filename_2, sizeof(filename_2)-1);
-      filename = basename(filename_2);
-      return_string = std::string(filename);
-    #endif
-
+#if defined(_WIN32)
+    //! Initialize pointers to file and user names
+    char filename[FILENAME_MAX];
+    GetModuleFileNameA(NULL, filename, FILENAME_MAX);
+    std::string path, ext;
+    splitFileName(filename, path, return_string, ext);
     filename[0] = '\0';
-    
+    //_splitpath_s(filename, NULL, NULL, NULL, NULL, filename, NULL, NULL, NULL);
+#else
+    return_string = getEnvironmentVariableValue("_");
+    return_string = cbica::replaceString(return_string, "./", "");
+    char path[PATH_MAX];
+    if (path != NULL) 
+    {
+      if (::readlink("/proc/self/exe", path, PATH_MAX) == -1) 
+      {
+        //free(path);
+        path[0] = '\0';
+      }
+    }
+    return_string = getFilenameBase(std::string(path));
+    path[0] = '\0';
+#endif
+
     return return_string;
   }
 
@@ -621,78 +709,74 @@ namespace cbica
     splitFileName(getFullPath(), path, base, ext);
     return path;
   }
-  
+
   std::string getFullPath()
   {
-    #if defined(_WIN32)
-    	//! Initialize pointers to file and user names
-    	char path[FILENAME_MAX];
-	    GetModuleFileNameA(NULL, path, FILENAME_MAX);
-      //_splitpath_s(filename, NULL, NULL, NULL, NULL, filename, NULL, NULL, NULL);
-    #else
-    	//! Initialize pointers to file and user names
-    	char path[PATH_MAX];    
-    	::readlink("/proc/self/exe", path, sizeof(path)-1);
-    #endif
+#if defined(_WIN32)
+    //! Initialize pointers to file and user names
+    char path[FILENAME_MAX];
+    GetModuleFileNameA(NULL, path, FILENAME_MAX);
+    //_splitpath_s(filename, NULL, NULL, NULL, NULL, filename, NULL, NULL, NULL);
+#else
+    //! Initialize pointers to file and user names
+    char path[PATH_MAX];
+    if (::readlink("/proc/self/exe", path, sizeof(path) - 1) == -1)
+      //path = dirname(path);
+      std::cerr << "Error during getting full path..\n";
+#endif
 
     std::string return_string = std::string(path);
     path[0] = '\0';
-    
+
     return return_string;
   }
-  
+
   std::string getUserName()
   {
-    #if defined(_WIN32)
-    	//! Initialize pointers to file and user names
-    	char username[FILENAME_MAX];
-    	DWORD username_len = FILENAME_MAX;
-    	GetUserName(username, &username_len);
-    #else
-    	//! Initialize pointers to file and user names
-    	char username[FILENAME_MAX];
-    	size_t username_len = FILENAME_MAX;
-    	getlogin_r(username, username_len);
-    #endif
-      
+#if defined(_WIN32)
+    //! Initialize pointers to file and user names
+    char username[FILENAME_MAX];
+    DWORD username_len = FILENAME_MAX;
+    GetUserName(username, &username_len);
+#else
+    //! Initialize pointers to file and user names
+    char username[FILENAME_MAX];
+    size_t username_len = FILENAME_MAX;
+    getlogin_r(username, username_len);
+#endif
+
     std::string return_string = std::string(username);
     username[0] = '\0';
-    
+
     return return_string;
   }
 
   std::string getUserHomeDirectory()
   {
-    char *tmp;
-    char tempPath[FILENAME_MAX];
+    std::string homeProfile;
 #if defined(_WIN32)
-    //size_t size;
-    //getenv_s(&size, tmp, size, "USERPROFILE"); // does not work, for some reason - needs to be tested
-    tmp = getenv("USERPROFILE");
-    std::string temp = cbica::replaceString(tmp, "\\", "/");
-    sprintf_s(tempPath, static_cast<size_t>(FILENAME_MAX), "%s", temp.c_str());
+    homeProfile = "USERPROFILE";
 #else
-    tmp = std::getenv("HOME");
-    sprintf(tempPath, "%s", tmp);
+    homeProfile = "HOME";
 #endif    
 
-    return std::string(tempPath);
+    return cbica::getEnvironmentVariableValue(homeProfile);
   }
 
   std::string getCWD()
   {
     std::string wd = "";
-    
+
     // use c++ convention
     char* buffer = GetCurrentDir(NULL, 0);
-    
-    if( buffer ) 
+
+    if (buffer)
     {
       wd = buffer;
       buffer[0] = '\0';
     }
     wd = replaceString(wd, "\\", "/");
-    if (wd[wd.length()-1] != '/')
+    if (wd[wd.length() - 1] != '/')
     {
       wd.append("/");
     }
@@ -701,104 +785,105 @@ namespace cbica
   }
 
   //! Check for separators [Internal_Function]
-  inline bool issep( char c )
+  inline bool issep(char c)
   {
-    #if defined(_WIN32)
-        return c == '/' || c == '\\';
-    #else
-        return c == '/';
-    #endif
+#if defined(_WIN32)
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
   }
 
   //! Check for absolute path [Internal_Function]
-  bool isabs( const std::string& path )
+  bool isabs(const std::string& path)
   {
     size_t i = 0;
-    #if defined(_WIN32)
-        if (path.size() > 1 && path[1] == ':') i = 2;
-    #endif
+#if defined(_WIN32)
+    if (path.size() > 1 && path[1] == ':') i = 2;
+#endif
     return i < path.size() && issep(path[i]);
   }
-  
+
   //! Joins separators based on OS [Internal_Function]
-  std::string join( const std::string& base, const std::string& path )
+  std::string join(const std::string& base, const std::string& path)
   {
-    if( base.empty() || isabs(path) )  
+    if (base.empty() || isabs(path))
       return path;
-    if( issep(base[base.size() - 1]) ) 
+    if (issep(base[base.size() - 1]))
       return (base + path);
 
-    #if defined(_WIN32)
-        return base + '\\' + path;
-    #else
-        return base + '/' + path;
-    #endif
+#if defined(_WIN32)
+    return base + '\\' + path;
+#else
+    return base + '/' + path;
+#endif
   }
 
-  std::string normPath( const std::string &path )
+  std::string normPath(const std::string &path)
   {
-    if( path.empty() ) 
+    if (path.empty())
       return "";
-    char drive[3] = {'\0', ':', '\0'};
+    char drive[3] = { '\0', ':', '\0' };
     size_t i = 0;
-    #if defined(_WIN32)
-      if( path.size() > 1 && path[1] == ':' ) 
-      {
-        drive[0] = path[0];
-        i = 2;
-      }
-    #endif
+#if defined(_WIN32)
+    if (path.size() > 1 && path[1] == ':')
+    {
+      drive[0] = path[0];
+      i = 2;
+    }
+#endif
     std::string norm_path = drive;
     bool abs = issep(path[i]);
-    if( abs ) 
+    if (abs)
     {
-      #if defined(_WIN32)
-        while( i <= path.size() && issep(path[i]) ) 
-        {
-          norm_path += cSeparator;
-          i++;
-        }
-      #else
+#if defined(_WIN32)
+      while (i <= path.size() && issep(path[i]))
+      {
         norm_path += cSeparator;
-      #endif
+        i++;
+      }
+#else
+      norm_path += cSeparator;
+#endif
     }
     std::string current;
     std::vector<std::string> parts;
-    while( i <= path.size() ) 
+    while (i <= path.size())
     {
-      if( issep(path[i]) || path[i] == '\0' )
+      if (issep(path[i]) || path[i] == '\0')
       {
-        if( current == ".." ) 
+        if (current == "..")
         {
-          if( !abs && (parts.empty() || parts.back() == "..") ) 
+          if (!abs && (parts.empty() || parts.back() == ".."))
           {
             parts.push_back(current);
-          } 
-          else if( !parts.empty() )
+          }
+          else if (!parts.empty())
           {
             parts.pop_back();
           }
-        } 
-        else if( current != "" && current != "." ) 
+        }
+        else if (current != "" && current != ".")
         {
           parts.push_back(current);
         }
         current.clear();
-      } 
-      else 
+      }
+      else
       {
         current += path[i];
       }
       i++;
     }
-    for( i = 0; i < parts.size(); i++ ) 
+    for (i = 0; i < parts.size(); i++)
     {
       norm_path = join(norm_path, parts[i]);
     }
+    std::replace(norm_path.begin(), norm_path.end(), '\\', '/');
     return norm_path.empty() ? "." : norm_path;
   }
 
-  std::string normalizePath( const std::string &path )
+  std::string normalizePath(const std::string &path)
   {
     return normPath(path);
   }
@@ -806,65 +891,65 @@ namespace cbica
   //! Absolute path [Internal_Function]
   std::string absPath(const std::string &path)
   {
-    return normPath( join(getCWD(),path) );
+    return normPath(join(getCWD(), path));
   }
 
   //! Split Drive name from path [Internal_Function]
-  inline void splitDrive( const std::string& path, std::string& drive, std::string& tail )
+  inline void splitDrive(const std::string& path, std::string& drive, std::string& tail)
   {
-    #if defined(_WIN32)
-      if( path.size() > 1 && path[1] == ':' ) 
-      {
-          tail  = path.substr(2);
-          drive = path[0]; drive += ':';
-      }
-      else
-    #endif
-      {
-        tail  = path;
-        drive = "";
-      }
+#if defined(_WIN32)
+    if (path.size() > 1 && path[1] == ':')
+    {
+      tail = path.substr(2);
+      drive = path[0]; drive += ':';
+    }
+    else
+#endif
+    {
+      tail = path;
+      drive = "";
+    }
   }
 
   //! Split Drive name from path [Internal_Function]
-  inline std::vector<std::string> splitDrive( const std::string& path )
+  inline std::vector<std::string> splitDrive(const std::string& path)
   {
     std::vector<std::string> parts(2, "");
     splitDrive(path, parts[0], parts[1]);
     return parts;
   }
 
-  std::string relPath( const std::string &path, const std::string &base )
+  std::string relPath(const std::string &path, const std::string &base)
   {
     // if relative path is given just return it
-    if( !isabs(path) ) 
+    if (!isabs(path))
       return path;
     // normalize paths
     std::string norm_path = normPath(path);
     std::string norm_base = normPath(join(getCWD(), base));
     // check if paths are on same drive
-    #if defined(_WIN32)
-      std::string drive = splitDrive(norm_path)[0];
-      std::string base_drive = splitDrive(norm_base)[0];
-      if( drive != base_drive ) 
-      {
-        std::cerr << "Error: Path is on drive " << drive << ", start is on drive " << base_drive;
-      }
-    #endif
+#if defined(_WIN32)
+    std::string drive = splitDrive(norm_path)[0];
+    std::string base_drive = splitDrive(norm_base)[0];
+    if (drive != base_drive)
+    {
+      std::cerr << "Error: Path is on drive " << drive << ", start is on drive " << base_drive;
+    }
+#endif
     // find start of first path component in which paths differ
     std::string::const_iterator b = norm_base.begin();
     std::string::const_iterator p = norm_path.begin();
     size_t pos = 0;
-    size_t i   = 0;
-    while( b != norm_base.end() && p != norm_path.end() ) 
+    size_t i = 0;
+    while (b != norm_base.end() && p != norm_path.end())
     {
-      if( issep(*p) ) 
+      if (issep(*p))
       {
-        if( !issep(*b) ) 
+        if (!issep(*b))
           break;
         pos = i;
-      } 
-      else if( *b != *p ) 
+      }
+      else if (*b != *p)
       {
         break;
       }
@@ -873,12 +958,12 @@ namespace cbica
     // set pos to i (in this case, the size of one of the paths) if the end
     // of one path was reached, but the other path has a path separator
     // at this position, this is required below
-    if( (b != norm_base.end() && issep(*b)) || (p != norm_path.end() && issep(*p)) ) 
-        pos = i;
+    if ((b != norm_base.end() && issep(*b)) || (p != norm_path.end() && issep(*p)))
+      pos = i;
     // skip trailing separator of other path if end of one path reached
-    if( b == norm_base.end() && p != norm_path.end() && issep(*p) ) 
+    if (b == norm_base.end() && p != norm_path.end() && issep(*p))
       p++;
-    if( p == norm_path.end() && b != norm_base.end() && issep(*b) ) 
+    if (p == norm_path.end() && b != norm_base.end() && issep(*b))
       b++;
     // if paths are the same, just return a period (.)
     //
@@ -889,7 +974,7 @@ namespace cbica
     //    base := "/usr/bin/" path := "/usr/bin/"
     //    base := "/usr/bin"  path := "/usr/bin/"
     //    base := "/usr/bin/" path := "/usr/bin"
-    if( b == norm_base.end() && p == norm_path.end() ) 
+    if (b == norm_base.end() && p == norm_path.end())
       return ".";
     // otherwise, pos is the index of the last slash for which both paths
     // were identical; hence, everything that comes after in the original
@@ -898,7 +983,7 @@ namespace cbica
     std::string rel_path;
     // truncate base path with a separator as for each "*/" path component,
     // a "../" will be prepended to the relative path
-    if( b != norm_base.end() && !issep(norm_base[norm_base.size() - 1]) ) 
+    if (b != norm_base.end() && !issep(norm_base[norm_base.size() - 1]))
     {
       // attention: This operation may invalidate the iterator b!
       //            Therefore, remember position of iterator and get a new one.
@@ -906,21 +991,21 @@ namespace cbica
       norm_base += cSeparator;
       b = norm_base.begin() + pos;
     }
-    while( b != norm_base.end() ) 
+    while (b != norm_base.end())
     {
-      if( issep(*b) ) 
+      if (issep(*b))
       {
         rel_path += "..";
         rel_path += cSeparator;
       }
       b++;
     }
-    if( pos + 1 < norm_path.size() ) 
+    if (pos + 1 < norm_path.size())
       rel_path += norm_path.substr(pos + 1);
     // remove trailing path separator
-    if( issep(rel_path[rel_path.size() - 1]) ) 
+    if (issep(rel_path[rel_path.size() - 1]))
     {
-        rel_path.erase(rel_path.size() - 1);
+      rel_path.erase(rel_path.size() - 1);
     }
     return rel_path;
   }
@@ -930,94 +1015,94 @@ namespace cbica
     return relPath(path, base);
   }
 
-  std::string realPath( const std::string &path )
+  std::string realPath(const std::string &path)
   {
     std::string curr_path = join(getCWD(), path);
-    #if defined(_WIN32)
-	  // nothing extra required
-    #else
-      char *actualPath = realpath(const_cast<char *>(curr_path.c_str()), NULL);
-      curr_path = std::string(actualPath);
-/*
-      // use stringstream and std::getline() to split absolute path at slashes (/)
-      std::stringstream ss(curr_path);
-      curr_path.clear();
-      std::string fname;
-      std::string prev_path;
-      std::string next_path;
-      char slash;
-      ss >> slash; // root slash
-      while( getline(ss, fname, '/') ) 
-      {
-        // current absolute path
-        curr_path += '/';
-        curr_path += fname;
-        // if current path is a symbolic link, follow it
-        if( isLink(curr_path) ) 
-        {
-          // for safety reasons, restrict the depth of symbolic links followed
-          for( unsigned int i = 0; i < 100; i++ ) 
-          {
-		    char *buffer=NULL, *newbuf=NULL;
-            size_t buflen = 256;
-            for(;;)
-            {
-              newbuf = reinterpret_cast<char*>(realloc(buffer, buflen * sizeof(char)) );
-              if( !newbuf )
-                break;
-              buffer = newbuf;
-              int n = ::newlink(path.c_str(), buffer, buflen);
-              if( n<0 )
-                break;
-              if( static_cast<size_t>(n)<buflen )
-              {
-                buffer[n] = '\0';
-                next_path = buffer;
-                break;
-              }
-              buflen+=256;
-            }
-            free(buffer);
-            //next_path = os::readlink(curr_path);
-            if( next_path.empty() ) 
-            {
-              // if real path could not be determined because of permissions
-              // or invalid path, return the original path
-              break;
-            } 
-            else 
-            {
-              curr_path = join(prev_path, next_path);
-              if( !isLink(next_path) ) 
-                break;
-            }
-          }
-          // if real path could not be determined with the given maximum number
-          // of loop iterations (endless cycle?) or one of the symbolic links
-          // could not be read, just return original path as absolute path
-          if( isLink(next_path) ) 
-            return absPath(path);
-        }
-        // memorize previous path used as base for abspath()
-        prev_path = curr_path;
-      }
-*/
-    #endif
+#if defined(_WIN32)
+    // nothing extra required
+#else
+    char *actualPath = realpath(const_cast<char *>(curr_path.c_str()), NULL);
+    curr_path = std::string(actualPath);
+    /*
+    // use stringstream and std::getline() to split absolute path at slashes (/)
+    std::stringstream ss(curr_path);
+    curr_path.clear();
+    std::string fname;
+    std::string prev_path;
+    std::string next_path;
+    char slash;
+    ss >> slash; // root slash
+    while( getline(ss, fname, '/') )
+    {
+    // current absolute path
+    curr_path += '/';
+    curr_path += fname;
+    // if current path is a symbolic link, follow it
+    if( isLink(curr_path) )
+    {
+    // for safety reasons, restrict the depth of symbolic links followed
+    for( unsigned int i = 0; i < 100; i++ )
+    {
+    char *buffer=NULL, *newbuf=NULL;
+    size_t buflen = 256;
+    for(;;)
+    {
+    newbuf = reinterpret_cast<char*>(realloc(buffer, buflen * sizeof(char)) );
+    if( !newbuf )
+    break;
+    buffer = newbuf;
+    int n = ::newlink(path.c_str(), buffer, buflen);
+    if( n<0 )
+    break;
+    if( static_cast<size_t>(n)<buflen )
+    {
+    buffer[n] = '\0';
+    next_path = buffer;
+    break;
+    }
+    buflen+=256;
+    }
+    free(buffer);
+    //next_path = os::readlink(curr_path);
+    if( next_path.empty() )
+    {
+    // if real path could not be determined because of permissions
+    // or invalid path, return the original path
+    break;
+    }
+    else
+    {
+    curr_path = join(prev_path, next_path);
+    if( !isLink(next_path) )
+    break;
+    }
+    }
+    // if real path could not be determined with the given maximum number
+    // of loop iterations (endless cycle?) or one of the symbolic links
+    // could not be read, just return original path as absolute path
+    if( isLink(next_path) )
+    return absPath(path);
+    }
+    // memorize previous path used as base for abspath()
+    prev_path = curr_path;
+    }
+    */
+#endif
     // normalize path after all symbolic links were resolved
     return normPath(curr_path);
   }
 
   bool isLink(const std::string &path)
   {
-    #if defined(_WIN32)
-      std::cerr << "Windows doesn't support ways to distinguish between hard and soft links.\n";
+#if defined(_WIN32)
+    std::cerr << "Windows doesn't support ways to distinguish between hard and soft links.\n";
+    return false;
+#else
+    struct stat info;
+    if (lstat(path.c_str(), &info) != 0)
       return false;
-    #else
-      struct stat info;
-      if (lstat(path.c_str(), &info) != 0) 
-        return false;
-      return S_ISLNK(info.st_mode);
-    #endif
+    return S_ISLNK(info.st_mode);
+#endif
   }
 
   bool isSymbolicLink(const std::string &path)
@@ -1032,25 +1117,25 @@ namespace cbica
       std::cerr << "Supplied file name wasn't found.\n";
       exit(EXIT_FAILURE);
     }
-    #if defined(_WIN32)
-      if( IsUserAnAdmin() )
-      {
-        if( CreateSymbolicLink(input_fileName.c_str(), ouput_fileName.c_str(), 0) != 0 )
-          return true;
-        else
-          return false;
-      }
+#if defined(_WIN32)
+    if (IsUserAnAdmin())
+    {
+      if (CreateSymbolicLink(input_fileName.c_str(), ouput_fileName.c_str(), 0) != 0)
+        return true;
       else
-      {
-        std::cerr << "Windows doesn't let non-admins create soft links.\n";
         return false;
-      }
-    #else
-    if( symlink(input_fileName.c_str(), ouput_fileName.c_str()) == 0 )
-      return true;
-    else 
+    }
+    else
+    {
+      std::cerr << "Windows doesn't let non-admins create soft links.\n";
       return false;
-    #endif
+    }
+#else
+    if (symlink(input_fileName.c_str(), ouput_fileName.c_str()) == 0)
+      return true;
+    else
+      return false;
+#endif
   }
 
   bool setEnvironmentVariable(const std::string &variable_name, const std::string &variable_value)
@@ -1058,13 +1143,13 @@ namespace cbica
     std::string totalVariable = variable_name + "=" + variable_value;
     try
     {
-      #if defined(_WIN32)
-        int test = _putenv(totalVariable.c_str());
-      #else
-        putenv(cbica::constCharToChar(totalVariable));
-      #endif
+#if defined(_WIN32)
+      int test = _putenv(totalVariable.c_str());
+#else
+      putenv(cbica::constCharToChar(totalVariable));
+#endif
     }
-    catch(const std::exception &e)
+    catch (const std::exception &e)
     {
       std::cerr << "Exception caught: " << e.what() << std::endl;
       return false;
@@ -1072,13 +1157,13 @@ namespace cbica
 
     return true;
   }
-  
+
   bool deleteEnvironmentVariable(const std::string &variable_name)
   {
     return cbica::setEnvironmentVariable(variable_name, "");
   }
 
-  std::vector< std::string > filesInDirectory( const std::string &dirName )
+  std::vector< std::string > filesInDirectory(const std::string &dirName, bool returnFullPath)
   {
     if (!cbica::directoryExists(dirName))
     {
@@ -1086,51 +1171,64 @@ namespace cbica
       exit(EXIT_FAILURE);
     }
     std::vector< std::string > allFiles;
-    std::string dirName_wrap = cbica::replaceString(dirName, "\\", "/");
-    if (dirName_wrap[dirName_wrap.length()-1] != '/')
+    std::string dirName_wrap = cbica::normPath(dirName);
+    if (dirName_wrap[dirName_wrap.length() - 1] != '/')
     {
       dirName_wrap.append("/");
     }
-    #if defined(_WIN32)
+#if defined(_WIN32)
     {
-      dirName_wrap.append("*.*");
-      char* search_path = cbica::constCharToChar(dirName_wrap.c_str());
-      WIN32_FIND_DATA fd; 
-      HANDLE hFind = ::FindFirstFile(search_path, &fd); 
-      if(hFind != INVALID_HANDLE_VALUE) 
-      { 
-        do 
-        { 
-          if(! (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) )
+      char* search_path = cbica::constCharToChar((dirName_wrap + "*.*").c_str());
+      WIN32_FIND_DATA fd;
+      HANDLE hFind = ::FindFirstFile(search_path, &fd);
+      if (hFind != INVALID_HANDLE_VALUE)
+      {
+        do
+        {
+          if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
           {
-            allFiles.push_back(fd.cFileName);
+            if (returnFullPath)
+            {
+              allFiles.push_back(dirName_wrap + fd.cFileName);
+            }
+            else
+            {
+              allFiles.push_back(fd.cFileName);
+            }
           }
-        } while(::FindNextFile(hFind, &fd)); 
-        ::FindClose(hFind); 
-      } 
+        } while (::FindNextFile(hFind, &fd));
+        ::FindClose(hFind);
+      }
       return allFiles;
 
     }
-    #else
+#else
     {
       DIR *dp;
       struct dirent *dirp;
-      if((dp  = opendir(dirName.c_str())) == NULL) 
+      if ((dp = opendir(dirName.c_str())) == NULL)
       {
-        std::cerr << "Error(" << errno << ") occurred while opening directory '" << 
+        std::cerr << "Error(" << errno << ") occurred while opening directory '" <<
           dirName << "'\n";
       }
-      
-      while ((dirp = readdir(dp)) != NULL) 
+
+      while ((dirp = readdir(dp)) != NULL)
       {
-        allFiles.push_back(std::string(dirp->d_name));
+        if (returnFullPath)
+        {
+          allFiles.push_back(dirName_wrap + std::string(dirp->d_name));
+        }
+        else
+        {
+          allFiles.push_back(std::string(dirp->d_name));
+        }
       }
       closedir(dp);
       return allFiles;
     }
-    #endif
+#endif
   }
-  
+
   std::vector<std::string> subdirectoriesInDirectory(const std::string &dirName, bool recursiveSearch)
   {
     if (!cbica::directoryExists(dirName))
@@ -1139,7 +1237,7 @@ namespace cbica
       exit(EXIT_FAILURE);
     }
     std::vector< std::string > allDirectories;
-    std::string dirName_wrap = cbica::replaceString(dirName, "\\", "/");
+    std::string dirName_wrap = cbica::normPath(dirName);
     if (dirName_wrap[dirName_wrap.length() - 1] != '/')
     {
       dirName_wrap.append("/");
@@ -1153,16 +1251,13 @@ namespace cbica
     {
       do
       {
-        if ((fd.dwFileAttributes | FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY && (fd.cFileName[0] != '.'))
+        if ((fd.dwFileAttributes | FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY && (fd.cFileName[0] != '.') && (fd.cFileName != ".svn"))
         {
           allDirectories.push_back(std::string(fd.cFileName));
           if (recursiveSearch)
           {
             std::vector<std::string> tempVector = subdirectoriesInDirectory(dirName + "/" + std::string(fd.cFileName), true);
-            for (size_t i = 0; i < tempVector.size(); i++)
-            {
-              allDirectories.push_back(std::string(fd.cFileName) + "/" + tempVector[i]);
-            }
+            allDirectories.insert(allDirectories.end(), tempVector.begin(), tempVector.end());
           }
         }
       } while (FindNextFile(hFind, &fd) != 0);
@@ -1178,30 +1273,32 @@ namespace cbica
 
     while ((dirp = readdir(dp)) != NULL)
     {
-      if (recursiveSearch && (dirp->d_type == DT_DIR) && dirp->d_name[0] != '.')
+      if (recursiveSearch && (dirp->d_type == DT_DIR) && (dirp->d_name[0] != '.') && (dirp->d_name != std::string(".svn").c_str()))
       {
         std::vector<std::string> tempVector = subdirectoriesInDirectory(dirName + "/" + dirp->d_name, true);
-        for (size_t i = 0; i < tempVector.size(); i++)
-          allDirectories.push_back(std::string(dirp->d_name) + "/" + tempVector[i]);
+        allDirectories.insert(allDirectories.end(), tempVector.begin(), tempVector.end());
       }
 
-      if ( (strcmp(dirp->d_name, ".") == 0) || (strcmp(dirp->d_name, "..") == 0) )
+      if ((strcmp(dirp->d_name, ".") == 0) || (strcmp(dirp->d_name, "..") == 0))
         continue;
 
-      allDirectories.push_back(dirp->d_name);
+      if (dirp->d_type == DT_DIR)
+      {
+        allDirectories.push_back(dirp->d_name);
+      }
     }
     closedir(dp);
 #endif
     return allDirectories;
   }
-  
+
   size_t numberOfRowsInFile(const std::string &csvFileName, const std::string &delim)
   {
     std::ifstream inFile(csvFileName.c_str());
 
     // new lines will be skipped     
     inFile.unsetf(std::ios_base::skipws);
-    
+
     // count the "\n"s with an algorithm specialized for counting
     return std::count(std::istream_iterator<char>(inFile), std::istream_iterator<char>(), *constCharToChar(delim));
   }
@@ -1209,14 +1306,14 @@ namespace cbica
   size_t numberOfColsInFile(const std::string &csvFileName, const std::string & delim)
   {
     std::vector< std::string > rowVec;
-    //std::ifstream inFile(csvFileName.c_str());
-    //std::string line;
-    //std::getline(inFile, line, '\n');
-    //line.erase(std::remove(line.begin(), line.end(), '"'), line.end());
-    //
-    //// read a single row
-    //rowVec = stringSplit(line, delim);
-    
+    std::ifstream inFile(csvFileName.c_str());
+    std::string line;
+    std::getline(inFile, line, '\n');
+    line.erase(std::remove(line.begin(), line.end(), '"'), line.end());
+
+    // read a single row
+    rowVec = stringSplit(line, delim);
+
     return rowVec.size();
   }
 
@@ -1234,7 +1331,7 @@ namespace cbica
 
     // store number of rows in the file - this is used to make the program parallelize-able 
     const size_t numberOfRows = numberOfRowsInFile(csvFileName);
-    
+
     // initialize return dictionary
     std::vector< CSVDict > return_CSVDict;
     return_CSVDict.resize(numberOfRows - 1);
@@ -1265,7 +1362,7 @@ namespace cbica
     {
       inputLabelsVec = stringSplit(inputLabels, optionsDelimiter); // columns to consider as labels
       // if label columns are defined, use that number for the vector, otherwise, it considers all columns appearing AFTER the last image column as labels
-      inputLabelIndeces.resize(inputLabelsVec.size()); 
+      inputLabelIndeces.resize(inputLabelsVec.size());
     }
 
     // populate information about which indeces to store for data from first row (rowCounter = 0)
@@ -1295,12 +1392,14 @@ namespace cbica
       }
     }
 
+#ifdef _OPENMP
     // organize the data
     int threads = omp_get_max_threads(); // obtain maximum number of threads available on machine  
     // if the total number of rows in CSV file are less than the available number of threads on machine (happens for testing),
     // use only the number of rows where meaningful data is present - this avoids extra thread overhead
-    threads > static_cast<int>(numberOfRows) ? threads = static_cast<int>(numberOfRows - 1) : threads = threads; 
-//#pragma omp parallel for num_threads(threads)
+    threads > static_cast<int>(numberOfRows) ? threads = static_cast<int>(numberOfRows - 1) : threads = threads;
+    //#pragma omp parallel for num_threads(threads)
+#endif
     for (int rowCounter = 1; rowCounter < static_cast<int>(allRows.size()); rowCounter++)
     {
       return_CSVDict[rowCounter - 1].inputImages.resize(inputColumnIndeces.size()); // pre-initialize size to ensure thread-safety
@@ -1329,7 +1428,7 @@ namespace cbica
             fileToAdd = cbica::getCWD() + allRows[rowCounter][inputColumnIndeces[i]];
           }
         }
-        
+
         return_CSVDict[rowCounter - 1].inputImages[i] = fileToAdd;
 
         if (checkFile) // this case should only be used for testing purposes
@@ -1353,106 +1452,219 @@ namespace cbica
           }
         }
       }
-      
+
     }
 
     return return_CSVDict;
   }
 
-  inline std::string iterateOverStringAndSeparators(const std::string &inputString, size_t &count, int enum_separator = 10)
+  std::vector< std::vector< std::string > > readCSVDataFile(const std::string &csvFileName)
   {
-    std::string returnString = "";
-    if (enum_separator == 10) // to get description
+    const size_t rows = numberOfRowsInFile(csvFileName);
+    const size_t cols = numberOfColsInFile(csvFileName);
+
+    std::vector< std::vector< std::string > > returnVector;
+    std::ifstream data(csvFileName.c_str());
+    std::string line, cell;
+
+    returnVector.resize(rows);
+    size_t i = 0, j = 0;
+    while (std::getline(data, line))
     {
-      returnString = inputString.substr(count + 1); // get all characters after the separator was detected
-    }    
-    else // for everything other than description
-    {
-      char testChar = inputString[count], separatorChar = *cbica::constCharToChar(getSeparator(enum_separator));
-      size_t position, // position to start getting the substring
-        separatorChecker = 2; // the configuration file needs the difference between two types of strings to be a single space (apart from the separator string)
-      if (testChar == separatorChar)  
+      j = 0;
+      returnVector[i].resize(cols);
+      std::stringstream lineStream(line);
+      while (std::getline(lineStream, cell, ','))
       {
-        count++;
-        position = count;
-        //stringStream.clear();
-        //stringStream << inputString[count];
-        //std::string testStr = stringStream.str(), testSep = getSeparator(enum_separator);
-        //while (stringStream.str() != getSeparator(enum_separator))
-        //{
-        //  stringStream << inputString[count];
-        //  returnString += stringStream.str();
-        //  stringStream.clear();
-        //  count++;
-        //}
-        testChar = inputString[count];
-        while (testChar != separatorChar)
-        {
-          count++;
-          testChar = inputString[count];
-        }
-        
-        returnString = inputString.substr(position, count - position);
+        returnVector[i][j] = cell;
+        j++;
       }
-      else // a small check as a contingency plan
-      {
-        while (separatorChecker > 0)
-        {
-          separatorChecker--;
-          count++;
-          testChar = inputString[count];
-        }
-      }
+      i++;
     }
 
-    return returnString;
-  }
-
-  std::vector< Parameter > readConfigFile(const std::string &path_to_config_file, bool getDescription)
-  {
-    std::vector< Parameter > returnVector;
-    std::ifstream inputFile(path_to_config_file.c_str());
-    if (!inputFile) 
-    {
-      std::cerr << "File '" << path_to_config_file << "' not found.\n";
-      exit(EXIT_FAILURE);
-    }
-    std::string line;
-    while (std::getline(inputFile, line)) 
-    {
-      std::string parameter, parameterDataType, parameterDataRange, parameterDescription = "";
-      for (size_t i = 0; i < line.length(); i++)
-      {
-        parameter = cbica::iterateOverStringAndSeparators(line, i, 
-#ifdef _WIN32
-          Separator::
-#endif
-          Param);
-        i = i + 2;
-        parameterDataType = cbica::iterateOverStringAndSeparators(line, i,
-#ifdef _WIN32
-          Separator::
-#endif
-          DataType);
-        i = i + 2;
-        parameterDataRange = cbica::iterateOverStringAndSeparators(line, i,
-#ifdef _WIN32
-          Separator::
-#endif
-          DataRange);
-        if (getDescription)
-        {
-          i = i + 1;
-          parameterDescription = cbica::iterateOverStringAndSeparators(line, i, 10);
-        }
-        i = line.length();
-        returnVector.push_back(Parameter("", parameter, parameterDataType, parameterDataRange, parameterDescription));
-      }
-    }
-
-    inputFile.close();
     return returnVector;
   }
+
+  std::map< std::string, size_t > ConfusionMatrix(const std::vector< float > &inputRealLabels, const std::vector< float > &inputPredictedLabels)
+  {
+    std::map< std::string, size_t > returnConfusionMatrix;
+
+    if (inputRealLabels.size() != inputPredictedLabels.size())
+    {
+      std::cerr << "The sizes of the real and predicted labels do not match; exiting.\n";
+      return returnConfusionMatrix;
+    }
+
+    size_t TP = 0, TN = 0, FP = 0, FN = 0, RP = 0, PP = 0;
+
+    for (size_t i = 0; i < inputRealLabels.size(); i++)
+    {
+      if (inputRealLabels[i] == 1)
+      {
+        RP++;
+      }
+      if (inputPredictedLabels[i] == 1)
+      {
+        PP++;
+      }
+
+      // both real and predicted labels are equal means it is a "true" prediction
+      if (inputRealLabels[i] == inputPredictedLabels[i])
+      {
+        if (inputRealLabels[i] == 1)
+        {
+          TP++;
+        }
+        else
+        {
+          TN++;
+        }
+      }
+      else
+      {
+        if (inputRealLabels[i] == 1)
+        {
+          FN++;
+        }
+        else
+        {
+          FP++;
+        }
+      }
+    }
+
+    // construct the return structure
+    returnConfusionMatrix["TP"] = TP;
+    returnConfusionMatrix["FP"] = FP;
+    returnConfusionMatrix["TN"] = TN;
+    returnConfusionMatrix["FN"] = FN;
+    returnConfusionMatrix["RP"] = RP;
+    returnConfusionMatrix["PP"] = PP;
+
+    return returnConfusionMatrix;
+  }
+
+  std::map< std::string, float > ROC_Values(const std::vector< float > &inputRealLabels, const std::vector< float > &inputPredictedLabels)
+  {
+    std::map< std::string, float > returnStatistics;
+
+    if (inputRealLabels.size() != inputPredictedLabels.size())
+    {
+      std::cerr << "The sizes of the real and predicted labels do not match; exiting.\n";
+      return returnStatistics;
+    }
+
+    auto confusionMatrix = ConfusionMatrix(inputRealLabels, inputPredictedLabels);
+    returnStatistics["TP"] = static_cast<float>(confusionMatrix["TP"]);
+    returnStatistics["FP"] = static_cast<float>(confusionMatrix["FP"]);
+    returnStatistics["TN"] = static_cast<float>(confusionMatrix["TN"]);
+    returnStatistics["FN"] = static_cast<float>(confusionMatrix["FN"]);
+    returnStatistics["RP"] = static_cast<float>(confusionMatrix["RP"]);
+    returnStatistics["PP"] = static_cast<float>(confusionMatrix["PP"]);
+
+    // https://en.wikipedia.org/wiki/Accuracy_and_precision
+    returnStatistics["Accuracy"] = (returnStatistics["TP"] + returnStatistics["TN"]) / (2 * inputRealLabels.size());
+
+    // https://en.wikipedia.org/wiki/Positive_and_negative_predictive_values
+    returnStatistics["PPV"] = returnStatistics["TP"] / returnStatistics["PP"];
+    returnStatistics["Precision"] = returnStatistics["PPV"];
+
+    // https://en.wikipedia.org/wiki/False_discovery_rate
+    returnStatistics["FDR"] = returnStatistics["TP"] / returnStatistics["PP"];
+
+    // https://en.wikipedia.org/wiki/Positive_and_negative_predictive_values#false_omission_rate
+    returnStatistics["FOR"] = returnStatistics["FN"] / (inputPredictedLabels.size() - returnStatistics["PP"]);
+
+    // https://en.wikipedia.org/wiki/Positive_and_negative_predictive_values
+    returnStatistics["NPV"] = returnStatistics["TN"] / (inputPredictedLabels.size() - returnStatistics["PP"]);
+
+    // https://en.wikipedia.org/wiki/Prevalence
+    returnStatistics["Prevalence"] = returnStatistics["RP"] / (2 * inputRealLabels.size());
+
+    // https://en.wikipedia.org/wiki/Sensitivity_and_specificity
+    returnStatistics["TPR"] = returnStatistics["TP"] / returnStatistics["RP"];
+    returnStatistics["Sensitivity"] = returnStatistics["TPR"];
+    returnStatistics["Recall"] = returnStatistics["TPR"];
+    returnStatistics["POD"] = returnStatistics["TPR"];
+
+    // https://en.wikipedia.org/wiki/False_positive_rate
+    returnStatistics["FPR"] = returnStatistics["FP"] / (inputPredictedLabels.size() - returnStatistics["RP"]);
+    returnStatistics["Fall-Out"] = returnStatistics["FPR"];
+
+    // https://en.wikipedia.org/wiki/False_positives_and_false_negatives#False_positive_and_false_negative_rates
+    returnStatistics["FNR"] = returnStatistics["FN"] / returnStatistics["RP"];
+    returnStatistics["MR"] = returnStatistics["FNR"];
+
+    // https://en.wikipedia.org/wiki/Sensitivity_and_specificity
+    returnStatistics["TNR"] = returnStatistics["TN"] / returnStatistics["RP"];
+    returnStatistics["Specificity"] = returnStatistics["TNR"];
+
+    // https://en.wikipedia.org/wiki/Likelihood_ratios_in_diagnostic_testing#positive_likelihood_ratio
+    returnStatistics["LR+"] = returnStatistics["TPR"] / returnStatistics["FPR"];
+
+    // https://en.wikipedia.org/wiki/Likelihood_ratios_in_diagnostic_testing#negative_likelihood_ratio
+    returnStatistics["LR-"] = returnStatistics["FNR"] / returnStatistics["TNR"];
+
+    // https://en.wikipedia.org/wiki/Diagnostic_odds_ratio
+    returnStatistics["DOR"] = returnStatistics["LR+"] / returnStatistics["LR-"];
+
+    // https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient
+    returnStatistics["Dice"] = 2 * returnStatistics["TP"] / (2 * returnStatistics["TP"] + returnStatistics["FP"] + returnStatistics["FN"]);
+
+    // https://en.wikipedia.org/wiki/Jaccard_index
+    returnStatistics["JR"] = 2 * returnStatistics["TP"] / (returnStatistics["TP"] + returnStatistics["FP"] + returnStatistics["FN"]);
+
+    return returnStatistics;
+  }
+
+  //inline std::string iterateOverStringAndSeparators(const std::string &inputString, size_t &count, int enum_separator = 10)
+  //{
+  //  std::string returnString = "";
+  //  if (enum_separator == 10) // to get description
+  //  {
+  //    returnString = inputString.substr(count + 1); // get all characters after the separator was detected
+  //  }    
+  //  else // for everything other than description
+  //  {
+  //    char testChar = inputString[count], separatorChar = *cbica::constCharToChar(getSeparator(enum_separator));
+  //    size_t position, // position to start getting the substring
+  //      separatorChecker = 2; // the configuration file needs the difference between two types of strings to be a single space (apart from the separator string)
+  //    if (testChar == separatorChar)  
+  //    {
+  //      count++;
+  //      position = count;
+  //      //stringStream.clear();
+  //      //stringStream << inputString[count];
+  //      //std::string testStr = stringStream.str(), testSep = getSeparator(enum_separator);
+  //      //while (stringStream.str() != getSeparator(enum_separator))
+  //      //{
+  //      //  stringStream << inputString[count];
+  //      //  returnString += stringStream.str();
+  //      //  stringStream.clear();
+  //      //  count++;
+  //      //}
+  //      testChar = inputString[count];
+  //      while (testChar != separatorChar)
+  //      {
+  //        count++;
+  //        testChar = inputString[count];
+  //      }
+  //      
+  //      returnString = inputString.substr(position, count - position);
+  //    }
+  //    else // a small check as a contingency plan
+  //    {
+  //      while (separatorChecker > 0)
+  //      {
+  //        separatorChecker--;
+  //        count++;
+  //        testChar = inputString[count];
+  //      }
+  //    }
+  //  }
+
+  //  return returnString;
+  //}
 
   std::string getCurrentLocalDate()
   {
@@ -1611,8 +1823,8 @@ namespace cbica
 
   //====================================== String stuff ====================================//
 
-  bool splitFileName( const std::string &dataFile, std::string &path,
-     std::string &baseName, std::string &extension )
+  bool splitFileName(const std::string &dataFile, std::string &path,
+    std::string &baseName, std::string &extension)
   {
     std::string dataFile_wrap = dataFile;
     std::vector< std::string > compressionFormats;
@@ -1620,7 +1832,7 @@ namespace cbica
     compressionFormats.push_back(".bz");
     compressionFormats.push_back(".zip");
     compressionFormats.push_back(".bz2");
-    
+
     // check for compression formats
     for (size_t i = 0; i < compressionFormats.size(); i++)
     {
@@ -1702,7 +1914,7 @@ namespace cbica
     }
   }
 
-  std::vector<std::string> stringSplit( const std::string &str, const std::string &delim )
+  std::vector<std::string> stringSplit(const std::string &str, const std::string &delim)
   {
     std::vector<std::string> results;
 
@@ -1720,32 +1932,32 @@ namespace cbica
     return results;
   }
 
-  std::string replaceString( const std::string &entireString, 
-                                    const std::string &toReplace, 
-                                    const std::string &replaceWith )
+  std::string replaceString(const std::string &entireString,
+    const std::string &toReplace,
+    const std::string &replaceWith)
   {
     std::string return_string = entireString;
-    for( size_t pos = 0; ; pos += replaceWith.length() ) 
+    for (size_t pos = 0;; pos += replaceWith.length())
     {
-    pos = return_string.find( toReplace, pos );
-      if( pos == std::string::npos ) 
+      pos = return_string.find(toReplace, pos);
+      if (pos == std::string::npos)
         break;
-      
-      return_string.erase( pos, toReplace.length() );
-      return_string.insert( pos, replaceWith );
+
+      return_string.erase(pos, toReplace.length());
+      return_string.insert(pos, replaceWith);
     }
     return return_string;
     /*
     if( entireString.length() < toReplace.length() )
-      std::cerr << "Length of string to search < length of string to replace. Please check.\n";
+    std::cerr << "Length of string to search < length of string to replace. Please check.\n";
 
     return(return_string.replace(entireString.find(toReplace), toReplace.length(), replaceWith));
     */
   }
-  
+
   char* constCharToChar(const std::string &input)
   {
-    char *s = new char[input.size()+1];
+    char *s = new char[input.size() + 1];
 #ifdef _WIN32
     strcpy_s(s, input.size() + 1, input.c_str());
 #else
@@ -1754,19 +1966,139 @@ namespace cbica
     return s;
   }
 
-  char* constCharToChar( const char *input )
+  char* constCharToChar(const char *input)
   {
     return cbica::constCharToChar(std::string(input));
   }
 
-  std::string computeMD5Sum(const std::string &fileName)
+  void dos2unix(const std::string inputFile)
   {
-    //gdcm::MD5 md5Computer;
-    //char digStr[_MAX_PATH];
-    //md5Computer.ComputeFile(fileName.c_str(), digStr);
-    //return std::string(digStr);
-    return "";
+#ifndef WIN32 // this function is not needed for Windows systems
+    auto tempDir = createTmpDir();
+    auto tempFile = tempDir + "tempFile.txt";
+
+    std::ifstream in(inputFile.c_str());
+    if (!in.is_open())
+    {
+      std::cerr << "Error: could not open '" << inputFile << "'\n";
+      return;
+    }
+    std::ofstream out(tempFile.c_str());
+    std::istreambuf_iterator<char> input(in), end;
+    std::ostreambuf_iterator<char> output(out);
+
+    std::remove_copy(input, end, output, '\r');
+    out.close();
+
+    std::remove(inputFile.c_str());
+    cbica::copyFile(tempFile, inputFile);
+
+    if (removeDirectoryRecursively(tempDir) != 0)
+    {
+      std::cerr << "There was an issue deleting the tempDir '" << tempDir << "'\n";
+    }
+#endif
+    return;
   }
 
+  size_t getTotalMemory()
+  {
+#if defined(_WIN32) && (defined(__CYGWIN__) || defined(__CYGWIN32__))
+    /* Cygwin under Windows. ------------------------------------ */
+    /* New 64-bit MEMORYSTATUSEX isn't available.  Use old 32.bit */
+    MEMORYSTATUS status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatus(&status);
+    return (size_t)status.dwTotalPhys;
 
+#elif defined(_WIN32)
+    /* Windows. ------------------------------------------------- */
+    /* Use new 64-bit MEMORYSTATUSEX, not old 32-bit MEMORYSTATUS */
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatusEx(&status);
+    return (size_t)status.ullTotalPhys;
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+    struct sysinfo memInfo;
+
+    sysinfo(&memInfo);
+    return memInfo.totalram * memInfo.mem_unit;
+#else
+    return 0L;			/* Unknown OS. */
+#endif
+  }
+
+  size_t getCurrentlyUsedMemory()
+  {
+#if WIN32
+    
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    GlobalMemoryStatusEx(&memInfo);
+    return memInfo.ullTotalPhys - memInfo.ullAvailPageFile;
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+
+    struct sysinfo memInfo;
+
+    sysinfo(&memInfo);
+    return memInfo.mem_unit * (memInfo.totalram - memInfo.freeram);
+
+#else
+    return 0;
+#endif
+  }
+
+  size_t getCurrentlyUsedMemoryByCurrentProcess()
+  {
+#if WIN32
+    PROCESS_MEMORY_COUNTERS pmc;
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    return pmc.WorkingSetSize;
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+    
+    FILE* file = fopen("/proc/self/status", "r");
+    int result = -1;
+    char line[128];
+
+    while (fgets(line, 128, file) != NULL) 
+    {
+      if (strncmp(line, "VmRSS:", 6) == 0) 
+      {
+        result = strlen(line);
+        const char* p = line;
+        while (*p <'0' || *p > '9') 
+          p++;
+        line[result - 3] = '\0';
+        result = atoi(p);
+        break;
+      }
+    }
+    fclose(file);
+    return static_cast< size_t >(result * 1000);
+
+#else
+    return 0;
+#endif
+  }
+
+  //! Cross platform Sleep
+  void sleep(size_t ms)
+  {
+    if (ms <= 0)
+    {
+      std::cerr << "Sleep time of zero or less is not defined; calling Sleep with default parameter.\n";
+      sleep();
+    }
+
+#if WIN32
+    Sleep(static_cast<unsigned int>(ms));
+#else
+    __time_t temp = static_cast<__time_t>(ms);
+    struct timespec ts = { temp / 1000, (temp % 1000) * 1000 * 1000 };
+    nanosleep(&ts, NULL);
+#endif
+  }
 }
