@@ -25,8 +25,8 @@ See COPYING file or https://www.cbica.upenn.edu/sbia/software/license.html
 #include "itkNiftiImageIO.h"
 #include "itkGDCMImageIO.h"
 #include "itkGDCMSeriesFileNames.h"
-#include "itkDCMTKImageIO.h"
-#include "itkDCMTKSeriesFileNames.h"
+//#include "itkDCMTKImageIO.h"
+//#include "itkDCMTKSeriesFileNames.h"
 #include "itkNumericSeriesFileNames.h"
 #include "itkOrientImageFilter.h"
 #include "itkChangeInformationImageFilter.h"
@@ -39,8 +39,8 @@ See COPYING file or https://www.cbica.upenn.edu/sbia/software/license.html
 #endif
 
 #include "cbicaUtilities.h"
-#include "cbicaITKImageInfo.h"
-#include "cbicaITKUtilities.h"
+//#include "cbicaITKImageInfo.h"
+//#include "cbicaITKUtilities.h"
 
 using ImageTypeFloat3D = itk::Image< float, 3 >;
 using TImageType = ImageTypeFloat3D;
@@ -160,90 +160,90 @@ namespace cbica
     return reader;
   }
 
-  /**
-  \brief Returns the unique series IDs in the specified directory
+  ///**
+  //\brief Returns the unique series IDs in the specified directory
 
-  The check is only done on the DICOM tag provided, so if there are series with the same UID information (but are indeed different images),
-  this function will not able to handle it.
+  //The check is only done on the DICOM tag provided, so if there are series with the same UID information (but are indeed different images),
+  //this function will not able to handle it.
 
-  \param dirName The directory in question
-  \param tagToCheck The tag on the basis of which the test is done; defaults to "0x0020|0x00E"
-  \return Vector of Series UIDs and fileName collection pairs, with each fileName collection corresponding to a UID
-  */
-  std::vector< std::pair< std::string , std::vector< std::string > > > GetDICOMSeriesAndFilesInDir(const std::string &dirName,
-    const std::string tagToCheck = "0x0020|0x00E")
-  {
-    std::vector< 
-      std::pair< 
-      std::string, // this is the series UID information
-      std::vector< std::string > > // these are the fileNames corresponding to each UID
-    > returnVector;
+  //\param dirName The directory in question
+  //\param tagToCheck The tag on the basis of which the test is done; defaults to "0x0020|0x00E"
+  //\return Vector of Series UIDs and fileName collection pairs, with each fileName collection corresponding to a UID
+  //*/
+  //std::vector< std::pair< std::string , std::vector< std::string > > > GetDICOMSeriesAndFilesInDir(const std::string &dirName,
+  //  const std::string tagToCheck = "0x0020|0x00E")
+  //{
+  //  std::vector< 
+  //    std::pair< 
+  //    std::string, // this is the series UID information
+  //    std::vector< std::string > > // these are the fileNames corresponding to each UID
+  //  > returnVector;
 
-    auto dirName_wrap = cbica::normPath(dirName);
-    auto allFilesInDir = cbica::filesInDirectory(dirName_wrap);
-    
-    // initialize the returnVector with the first series UID and fileName
-    returnVector.push_back(
-      std::make_pair(cbica::GetDICOMTagValue(allFilesInDir[0], tagToCheck), // get the first series UID 
-      std::vector< std::string >({ allFilesInDir[0] }) // construct a initial vector
-      ));
+  //  auto dirName_wrap = cbica::normPath(dirName);
+  //  auto allFilesInDir = cbica::filesInDirectory(dirName_wrap);
+  //  
+  //  // initialize the returnVector with the first series UID and fileName
+  //  returnVector.push_back(
+  //    std::make_pair(cbica::GetDICOMTagValue(allFilesInDir[0], tagToCheck), // get the first series UID 
+  //    std::vector< std::string >({ allFilesInDir[0] }) // construct a initial vector
+  //    ));
 
-    std::vector< std::string > volumeSeries;
-    const std::string volumeSeriesTag = "0x0018|0x1030";
-    volumeSeries.push_back(cbica::GetDICOMTagValue(allFilesInDir[0], volumeSeriesTag));
+  //  std::vector< std::string > volumeSeries;
+  //  const std::string volumeSeriesTag = "0x0018|0x1030";
+  //  volumeSeries.push_back(cbica::GetDICOMTagValue(allFilesInDir[0], volumeSeriesTag));
 
-    // looping through all the found files
-    for (size_t i = 1; i < allFilesInDir.size(); i++)
-    {
-      auto temp = cbica::GetDICOMTagValue(allFilesInDir[i], tagToCheck);
-      auto temp_volSeries = cbica::GetDICOMTagValue(allFilesInDir[i], volumeSeriesTag);
+  //  // looping through all the found files
+  //  for (size_t i = 1; i < allFilesInDir.size(); i++)
+  //  {
+  //    auto temp = cbica::GetDICOMTagValue(allFilesInDir[i], tagToCheck);
+  //    auto temp_volSeries = cbica::GetDICOMTagValue(allFilesInDir[i], volumeSeriesTag);
 
-      bool newUIDFound = true;
-      for (size_t j = 0; j < returnVector.size(); j++)
-      {
-        if (returnVector[j].first == temp)
-        {
-          bool newVolSeriesFound = true;
-          for (size_t k = 0; k < volumeSeries.size(); k++)
-          {
-            if (volumeSeries[k] == temp_volSeries)
-            {
-              newVolSeriesFound = false;
-            }
-          }
-          if (!newVolSeriesFound)
-          {
-            returnVector[j].second.push_back(allFilesInDir[i]);
-            newUIDFound = false;
-            break;
-          }
-          else
-          {
-            volumeSeries.push_back(temp_volSeries); // the new volume has same series UID information so nothing changes there
-          }
-        }
-      }
-      if (newUIDFound)
-      {
-        // add a new seriesUID-fileNames pair
-        returnVector.push_back(
-          std::make_pair(temp, // this is the UID
-          std::vector< std::string >({ allFilesInDir[i] }) // first filename corresponding to the UID
-          ));
-      }
-    }
+  //    bool newUIDFound = true;
+  //    for (size_t j = 0; j < returnVector.size(); j++)
+  //    {
+  //      if (returnVector[j].first == temp)
+  //      {
+  //        bool newVolSeriesFound = true;
+  //        for (size_t k = 0; k < volumeSeries.size(); k++)
+  //        {
+  //          if (volumeSeries[k] == temp_volSeries)
+  //          {
+  //            newVolSeriesFound = false;
+  //          }
+  //        }
+  //        if (!newVolSeriesFound)
+  //        {
+  //          returnVector[j].second.push_back(allFilesInDir[i]);
+  //          newUIDFound = false;
+  //          break;
+  //        }
+  //        else
+  //        {
+  //          volumeSeries.push_back(temp_volSeries); // the new volume has same series UID information so nothing changes there
+  //        }
+  //      }
+  //    }
+  //    if (newUIDFound)
+  //    {
+  //      // add a new seriesUID-fileNames pair
+  //      returnVector.push_back(
+  //        std::make_pair(temp, // this is the UID
+  //        std::vector< std::string >({ allFilesInDir[i] }) // first filename corresponding to the UID
+  //        ));
+  //    }
+  //  }
 
-    return returnVector;
+  //  return returnVector;
 
-    //// this implementation takes a *lot* of time
-    //auto dicomIO = itk::DCMTKImageIO::New();
-    //auto inputNames = itk::DCMTKSeriesFileNames::New();
-    //inputNames->SetInputDirectory(dirName_wrap);
-    //inputNames->SetLoadPrivateTags(true);
-    //auto UIDs = inputNames->GetSeriesUIDs(); // this is the primary bottle-neck, I think because it does checks on multiple different things
+  //  //// this implementation takes a *lot* of time
+  //  //auto dicomIO = itk::DCMTKImageIO::New();
+  //  //auto inputNames = itk::DCMTKSeriesFileNames::New();
+  //  //inputNames->SetInputDirectory(dirName_wrap);
+  //  //inputNames->SetLoadPrivateTags(true);
+  //  //auto UIDs = inputNames->GetSeriesUIDs(); // this is the primary bottle-neck, I think because it does checks on multiple different things
 
-    //return cbica::GetUniqueElements< std::string >(UIDs);
-  }
+  //  //return cbica::GetUniqueElements< std::string >(UIDs);
+  //}
 
   /**
   \brief Get the Dicom image reader (not the image, the READER). This is useful for scenarios where reader meta information is needed for later writing step(s).

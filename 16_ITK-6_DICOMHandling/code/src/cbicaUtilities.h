@@ -354,12 +354,12 @@ namespace cbica
   */
   size_t getFileSize(const std::string &inputFile);
 
-  /*
-  \brief Checks for the compatibility with the current project
+  ///*
+  //\brief Checks for the compatibility with the current project
 
-  \param inputVersionFile The version file (in YAML) that contains the compatibility information 
-  */
-  bool IsCompatible(const std::string inputVersionFile);
+  //\param inputVersionFile The version file (in YAML) that contains the compatibility information 
+  //*/
+  //bool IsCompatible(const std::string inputVersionFile);
 
   /**
   \brief Get the size of the folder

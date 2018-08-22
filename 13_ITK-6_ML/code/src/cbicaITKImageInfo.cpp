@@ -13,6 +13,7 @@ See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 #include "cbicaITKImageInfo.h"
 
 #include "cbicaUtilities.h"
+#include "cbicaITKUtilities.h"
 
 namespace cbica
 {
@@ -20,36 +21,52 @@ namespace cbica
   
   ImageInfo::ImageInfo( const std::string &fName )
   {
-    m_fileName = fName;
-    m_itkImageIOBase = itk::ImageIOFactory::CreateImageIO( 
-                       fName.c_str(), itk::ImageIOFactory::ReadMode );
-    
-    // exception handling in case of NULL pointer initialization
-    if ( m_itkImageIOBase )
+    auto fName_norm = cbica::normPath(fName);
+    auto fName_ext = cbica::getFilenameExtension(fName);
+
+    if (cbica::isFile(fName) && (fName_ext != ".dcm"))
     {
-      m_itkImageIOBase->SetFileName(fName);
+      m_fileName = fName_norm;
+     
+      m_itkImageIOBase = itk::ImageIOFactory::CreateImageIO(m_fileName.c_str(), itk::ImageIOFactory::ReadMode);
+
+      // exception handling in case of NULL pointer initialization
+      if (m_itkImageIOBase)
+      {
+        m_itkImageIOBase->SetFileName(m_fileName);
+        m_itkImageIOBase->ReadImageInformation();
+      }
+      else
+      {
+        itkGenericExceptionMacro("Could not read the input image information from '" << m_fileName << "'\n");
+      }
+
+      m_itkImageIOBase->SetFileName(m_fileName);
       m_itkImageIOBase->ReadImageInformation();
+
+      m_IOComponentType = m_itkImageIOBase->GetComponentType();
+      m_pixelType = m_itkImageIOBase->GetPixelType();
+      m_IOComponentType_asString = m_itkImageIOBase->GetComponentTypeAsString(m_IOComponentType);
+      m_pixelType_asString = m_itkImageIOBase->GetPixelTypeAsString(m_pixelType);
+
+      for (size_t i = 0; i<m_itkImageIOBase->GetNumberOfDimensions(); i++)
+      {
+        m_spacings.push_back(m_itkImageIOBase->GetSpacing(i));
+        m_origins.push_back(m_itkImageIOBase->GetOrigin(i));
+        m_size.push_back(m_itkImageIOBase->GetDimensions(i));
+      }
+    }
+    else if (fName_ext == ".dcm")
+    {
+      m_dicomDetected = true;
+      // nothing to do here
+      return;
     }
     else
     {
-      itkGenericExceptionMacro("Could not read the input image information from '" << fName << "'\n");
+      std::cerr << "Please pass a non-DICOM image file for this class.\n";
+      return;
     }
-
-    m_itkImageIOBase->SetFileName(fName);
-    m_itkImageIOBase->ReadImageInformation();
-
-    m_IOComponentType = m_itkImageIOBase->GetComponentType();
-    m_pixelType = m_itkImageIOBase->GetPixelType();
-    m_IOComponentType_asString = m_itkImageIOBase->GetComponentTypeAsString(m_IOComponentType);
-    m_pixelType_asString = m_itkImageIOBase->GetPixelTypeAsString(m_pixelType);
-
-    for (size_t i = 0; i<m_itkImageIOBase->GetNumberOfDimensions(); i++)
-    {
-      m_spacings.push_back(m_itkImageIOBase->GetSpacing(i));
-      m_origins.push_back(m_itkImageIOBase->GetOrigin(i));
-      m_size.push_back(m_itkImageIOBase->GetDimensions(i));
-    }
-
   }
   
   ImageInfo::~ImageInfo()

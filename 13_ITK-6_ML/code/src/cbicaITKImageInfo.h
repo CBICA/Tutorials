@@ -16,9 +16,11 @@ See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 
 #include <algorithm>
 #include <string>
+#include <vector>
 //#include <tuple>
 
 #include "itkImage.h"
+#include "itkImageIOBase.h"
 #include "itkImageFileReader.h"
 
 namespace cbica
@@ -124,6 +126,14 @@ namespace cbica
     \return Pixel type as an itk IOComponentType
     */
     itk::ImageIOBase::IOPixelType GetPixelType();
+
+    /**
+    \brief Is the supplied image defined as a DICOM or not
+    */
+    bool IsDicom()
+    {
+      return m_dicomDetected;
+    }
         
   protected:
     std::string m_fileName;
@@ -135,5 +145,7 @@ namespace cbica
     std::string m_pixelType_asString, m_IOComponentType_asString;
     itk::ImageIOBase::IOComponentType m_IOComponentType;
     itk::ImageIOBase::IOPixelType m_pixelType;
+    bool m_dicomDetected = false;
+    std::vector< std::string > m_uids; // only for DICOM
   };
 }
