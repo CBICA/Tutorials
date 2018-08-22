@@ -1,4 +1,4 @@
-# ITK-1: Segmentation
+# ITK-2: Registration
 
 This example shows how to use ITK's registration module.
 

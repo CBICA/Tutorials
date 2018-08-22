@@ -1,6 +1,6 @@
-# ITK-1: Segmentation
+# ITK-5: Pipelines
 
-This example shows how to use ITK's registration module.
+This example shows how to use ITK for pipelining.
 
 # Usage
 

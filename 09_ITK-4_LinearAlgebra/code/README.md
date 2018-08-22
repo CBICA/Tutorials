@@ -1,6 +1,6 @@
-# ITK-1: Segmentation
+# ITK-4: Linear Algebra
 
-This example shows how to use ITK's registration module.
+This example shows how to use ITK's linear algebra module.
 
 # Usage
 

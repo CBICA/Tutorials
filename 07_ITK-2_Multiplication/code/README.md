@@ -1,4 +1,4 @@
-# ITK-1: Segmentation
+# ITK-2: Generic Filter
 
 This example shows how to use ITK's multiplication filter.
 
