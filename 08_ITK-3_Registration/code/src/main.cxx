@@ -152,7 +152,7 @@ void registrationFilter(typename TImageType::Pointer fixedImage,
 
 void echoUsage(const std::string &exeName)
 {
-  std::cout << exeName << " <inputImageFile1> <inputImageFile2> <outputFileName> <inputImageFile2Mask>\n" <<
+  std::cout << exeName << " <fixedImage> <movingImage> <outputFileName> <movingImageMask>\n" <<
     "NOTE - Only 3D images are supported in this example.\n";
 }
 
