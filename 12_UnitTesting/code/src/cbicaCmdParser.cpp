@@ -51,7 +51,7 @@ static const char  cSeparator = '/';
 #include <algorithm>
 #include <string>
 #include "cbicaCmdParser.h"
-#include "yaml-cpp/yaml.h"
+//#include "yaml-cpp/yaml.h"
 
 #ifndef PROJECT_VERSION
 #define PROJECT_VERSION "0.0.1"
