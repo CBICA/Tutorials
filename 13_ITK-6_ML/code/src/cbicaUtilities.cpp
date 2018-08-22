@@ -20,6 +20,7 @@ See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 #include <lmcons.h>
 #include <Shlobj.h>
 #include <filesystem>
+#include <psapi.h>
 #define GetCurrentDir _getcwd
 bool WindowsDetected = true;
 static const char  cSeparator = '\\';
@@ -40,6 +41,16 @@ static const char  cSeparator = '/';
 //  static const char* cSeparators = "/";
 #endif
 
+#if defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/sysinfo.h>
+#endif
+#if defined(BSD)
+#include <sys/sysctl.h>
+#endif
+
 #include <fstream>
 #include <stdlib.h>
 #include <stdio.h>
@@ -57,6 +68,7 @@ static const char  cSeparator = '/';
 #include <thread>
 
 #include "cbicaUtilities.h"
+#include "yaml-cpp/yaml.h"
 
 namespace cbica
 {
@@ -506,6 +518,31 @@ namespace cbica
     */
   }
 
+  bool IsCompatible(const std::string inputVersionFile)
+  {
+    auto config = YAML::LoadFile(inputVersionFile);
+
+    auto currentCollectionVersion = std::stoi(cbica::replaceString(config["Version"].as< std::string >().c_str(), ".", "").c_str());
+    auto minimumVersion = std::stoi(cbica::replaceString(config["Minimum"].as< std::string >().c_str(), ".", "").c_str());
+    auto maximumVersion = std::stoi(cbica::replaceString(config["Maximum"].as< std::string >().c_str(), ".", "").c_str());
+    auto currentPackageVersion = std::stoi(cbica::replaceString(std::string(PROJECT_VERSION), ".", "").c_str());
+
+    if (currentPackageVersion == currentCollectionVersion)
+    {
+      return true;
+    }
+    if (currentPackageVersion < minimumVersion)
+    {
+      return false;
+    }
+    if (currentPackageVersion > maximumVersion)
+    {
+      return false;
+    }
+
+    return true;
+  }
+
   size_t getFolderSize(const std::string &rootFolder)
   {
     size_t f_size = 0;
@@ -587,7 +624,7 @@ namespace cbica
     {
       if (!fileExists(filename))
       {
-        std::cerr << "Supplied file name wasn't found.\n";
+        std::cerr << "Supplied file name '" << filename << "' wasn't found.\n";
         exit(EXIT_FAILURE);
       }
     }
@@ -603,7 +640,7 @@ namespace cbica
     {
       if (!fileExists(filename))
       {
-        std::cerr << "Supplied file name wasn't found.\n";
+        std::cerr << "Supplied file name '" << filename << "' wasn't found.\n";
         exit(EXIT_FAILURE);
       }
     }
@@ -625,7 +662,7 @@ namespace cbica
       {
         if (!fileExists(filename))
         {
-          std::cerr << "Supplied file name wasn't found.\n";
+          std::cerr << "Supplied file name '" << filename << "' wasn't found.\n";
           exit(EXIT_FAILURE);
         }
       }
@@ -1962,6 +1999,89 @@ namespace cbica
     }
 #endif
     return;
+  }
+
+  size_t getTotalMemory()
+  {
+#if defined(_WIN32) && (defined(__CYGWIN__) || defined(__CYGWIN32__))
+    /* Cygwin under Windows. ------------------------------------ */
+    /* New 64-bit MEMORYSTATUSEX isn't available.  Use old 32.bit */
+    MEMORYSTATUS status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatus(&status);
+    return (size_t)status.dwTotalPhys;
+
+#elif defined(_WIN32)
+    /* Windows. ------------------------------------------------- */
+    /* Use new 64-bit MEMORYSTATUSEX, not old 32-bit MEMORYSTATUS */
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatusEx(&status);
+    return (size_t)status.ullTotalPhys;
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+    struct sysinfo memInfo;
+
+    sysinfo(&memInfo);
+    return memInfo.totalram * memInfo.mem_unit;
+#else
+    return 0L;			/* Unknown OS. */
+#endif
+  }
+
+  size_t getCurrentlyUsedMemory()
+  {
+#if WIN32
+    
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    GlobalMemoryStatusEx(&memInfo);
+    return memInfo.ullTotalPhys - memInfo.ullAvailPageFile;
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+
+    struct sysinfo memInfo;
+
+    sysinfo(&memInfo);
+    return memInfo.mem_unit * (memInfo.totalram - memInfo.freeram);
+
+#else
+    return 0;
+#endif
+  }
+
+  size_t getCurrentlyUsedMemoryByCurrentProcess()
+  {
+#if WIN32
+    PROCESS_MEMORY_COUNTERS pmc;
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    return pmc.WorkingSetSize;
+
+#elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
+    
+    FILE* file = fopen("/proc/self/status", "r");
+    int result = -1;
+    char line[128];
+
+    while (fgets(line, 128, file) != NULL) 
+    {
+      if (strncmp(line, "VmRSS:", 6) == 0) 
+      {
+        result = strlen(line);
+        const char* p = line;
+        while (*p <'0' || *p > '9') 
+          p++;
+        line[result - 3] = '\0';
+        result = atoi(p);
+        break;
+      }
+    }
+    fclose(file);
+    return static_cast< size_t >(result * 1000);
+
+#else
+    return 0;
+#endif
   }
 
   //! Cross platform Sleep

@@ -13,6 +13,7 @@ See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 #if (_WIN32)
 #define NOMINMAX
 #include <direct.h>
+#include <iostream>
 #include <windows.h>
 #include <conio.h>
 #include <lmcons.h>
@@ -50,6 +51,7 @@ static const char  cSeparator = '/';
 #include <algorithm>
 #include <string>
 #include "cbicaCmdParser.h"
+#include "yaml-cpp/yaml.h"
 
 #ifndef PROJECT_VERSION
 #define PROJECT_VERSION "0.0.1"
@@ -998,7 +1000,7 @@ namespace cbica
       exit(EXIT_FAILURE);
     }
     int position;
-    if (compareParameter(execParamToCheck, position))
+    if (compareParameter(execParamToCheck, position) && (position < (m_argc - 1)))
     {
       parameterValue = std::atoi(m_argv[position + 1].c_str()); // return value is an integer
       return;
@@ -1019,7 +1021,7 @@ namespace cbica
       exit(EXIT_FAILURE);
     }
     int position;
-    if (compareParameter(execParamToCheck, position))
+    if (compareParameter(execParamToCheck, position) && (position < (m_argc - 1)))
     {
       parameterValue = std::atoi(m_argv[position + 1].c_str()); // return value is an integer
       return;
@@ -1040,7 +1042,7 @@ namespace cbica
       exit(EXIT_FAILURE);
     }
     int position;
-    if (compareParameter(execParamToCheck, position))
+    if (compareParameter(execParamToCheck, position) && (position < (m_argc - 1)))
     {
       parameterValue = static_cast<float>(std::atof(m_argv[position + 1].c_str())); // return value is a float
       return;
@@ -1067,7 +1069,7 @@ namespace cbica
       }
     }
     int position;
-    if (compareParameter(execParamToCheck, position))
+    if (compareParameter(execParamToCheck, position) && (position < (m_argc - 1)))
     {
       parameterValue = m_argv[position + 1]; // return value is a string
       return;
@@ -1085,6 +1087,438 @@ namespace cbica
     m_exampleOfUsage = cbica::stringReplace(m_exampleOfUsage, m_exeName + ".exe", "");
     m_exampleOfUsage = cbica::stringReplace(m_exampleOfUsage, "./" + m_exeName, "");
   }
+  /*
+  void CmdParser::writeCWLFile(const std::string &dirName, const std::string &workflowName) 
+  {
+
+    if (!checkMaxLen)
+    {
+      getMaxLength();
+    }
+
+    std::string dirName_wrap;
+    if (!cbica::directoryExists(dirName) || (dirName.empty()))
+    {
+      dirName_wrap = cbica::makeTempDir();
+    }
+    dirName_wrap = cbica::stringReplace(dirName, "\\", "/");
+    if (dirName_wrap.substr(dirName_wrap.length() - 1) != "/")
+    {
+      dirName_wrap += "/";
+    }
+
+    std::string cwlfileName = dirName_wrap + m_exeName + ".cwl";
+
+    std::ofstream file;
+    file.open(cwlfileName.c_str());
+
+    YAML::Node config = YAML::LoadFile(cwlfileName);
+
+    config["cwlVersion"] = "v1.0";
+    config["class"] = "CommandLineTool";
+    config["version"] = m_version;
+    config["baseCommand"] = m_exeName;
+
+    YAML::Node inputs = config["inputs"];
+
+    for (size_t i = 0; i < m_requiredParameters.size(); i++)
+    {
+      config["inputs"]["-" + m_requiredParameters[i].verbose];
+      config["inputs"][m_requiredParameters[i].verbose]["type"] =
+        (m_requiredParameters[i].dataType_string == "STRING") ? "string" :
+        (m_requiredParameters[i].dataType_string == "DIRECTORY") ? "Directory" :
+        (m_requiredParameters[i].dataType_string == "FLOAT") ? "float" :
+        (m_requiredParameters[i].dataType_string == "BOOL") ? "boolean" :
+        (m_requiredParameters[i].dataType_string == "NONE") ? "string" :
+        (m_requiredParameters[i].dataType_string == "UNKNOWN") ? "string" :
+        (m_requiredParameters[i].dataType_string == "INTEGER") ? "int" :
+        (m_requiredParameters[i].dataType_string == "FILE") ? "File" :
+        "string";
+      config["inputs"][m_requiredParameters[i].verbose]["label"] = m_requiredParameters[i].dataRange == "" ? "none" : m_requiredParameters[i].dataRange;
+      YAML::Node inputBinding = config["inputBinding"];
+      config["inputs"][m_requiredParameters[i].verbose]["inputBinding"]["position"] = 1;
+      config["inputs"][m_requiredParameters[i].verbose]["inputBinding"]["prefix"] = "-" + m_requiredParameters[i].laconic;
+      config["inputs"][m_requiredParameters[i].verbose]["doc"] =
+        (m_requiredParameters[i].descriptionLine1 == "" ? "" : (m_requiredParameters[i].descriptionLine1 + ".")) +
+        (m_requiredParameters[i].descriptionLine2 == "" ? "" : (m_requiredParameters[i].descriptionLine2 + ".")) +
+        (m_requiredParameters[i].descriptionLine3 == "" ? "" : (m_requiredParameters[i].descriptionLine3 + ".")) +
+        (m_requiredParameters[i].descriptionLine4 == "" ? "" : (m_requiredParameters[i].descriptionLine4 + ".")) +
+        (m_requiredParameters[i].descriptionLine5 == "" ? "" : (m_requiredParameters[i].descriptionLine5 + "."));
+    }
+
+    if (m_optionalParameters.size() > 0) {
+      for (size_t i = 0; i < m_optionalParameters.size(); i++)
+      {
+        if (m_optionalParameters[i].verbose == "help" ||
+          m_optionalParameters[i].verbose == "usage" ||
+          m_optionalParameters[i].verbose == "version" ||
+          m_optionalParameters[i].verbose == "LogFile") {
+          continue;
+        }
+        else {
+          config["inputs"]["-" + m_optionalParameters[i].verbose];
+          config["inputs"][m_optionalParameters[i].verbose]["type"] =
+            (m_optionalParameters[i].dataType_string == "STRING") ? "string?" :
+            (m_optionalParameters[i].dataType_string == "DIRECTORY") ? "Directory?" :
+            (m_optionalParameters[i].dataType_string == "FLOAT") ? "float?" :
+            (m_optionalParameters[i].dataType_string == "BOOL") ? "boolean?" :
+            (m_optionalParameters[i].dataType_string == "NONE") ? "string?" :
+            (m_optionalParameters[i].dataType_string == "UNKNOWN") ? "string?" :
+            (m_optionalParameters[i].dataType_string == "INTEGER") ? "int?" :
+            (m_optionalParameters[i].dataType_string == "FILE") ? "File?" :
+            "string?";
+          config["inputs"][m_optionalParameters[i].verbose]["label"] = m_optionalParameters[i].dataRange == "" ? "none" : m_optionalParameters[i].dataRange;
+          config["inputs"][m_optionalParameters[i].verbose]["inputBinding"];
+          config["inputs"][m_optionalParameters[i].verbose]["inputBinding"]["position"] = 1;
+          config["inputs"][m_optionalParameters[i].verbose]["inputBinding"]["prefix"] = "-" + m_optionalParameters[i].laconic;
+          config["inputs"][m_optionalParameters[i].verbose]["doc"] =
+            (m_optionalParameters[i].descriptionLine1 == "" ? "" : (m_optionalParameters[i].descriptionLine1 + ".")) +
+            (m_optionalParameters[i].descriptionLine2 == "" ? "" : (m_optionalParameters[i].descriptionLine2 + ".")) +
+            (m_optionalParameters[i].descriptionLine3 == "" ? "" : (m_optionalParameters[i].descriptionLine3 + ".")) +
+            (m_optionalParameters[i].descriptionLine4 == "" ? "" : (m_optionalParameters[i].descriptionLine4 + ".")) +
+            (m_optionalParameters[i].descriptionLine5 == "" ? "" : (m_optionalParameters[i].descriptionLine5 + "."));
+        }
+      }
+    }
+
+    std::ofstream fout(cwlfileName);
+    fout << config;
+
+    return;
+  }
+
+  std::string CmdParser::GetCommandFromCWL(const std::string &inpDir, const std::string & cwlDir)
+  {
+    if (!checkMaxLen)
+    {
+      getMaxLength();
+    }
+
+    std::string inpDirName_warp, cwlDirName_warp;
+
+
+    if (!cbica::directoryExists(inpDir) || (inpDir.empty()))
+    {
+      inpDirName_warp = cbica::makeTempDir();
+    }
+    inpDirName_warp = cbica::stringReplace(inpDir, "\\", "/");
+    if (inpDirName_warp.substr(inpDirName_warp.length() - 1) != "/")
+    {
+      inpDirName_warp += "/";
+    }
+
+    //cwl dir
+    if (!cbica::directoryExists(cwlDir) || (cwlDir.empty()))
+    {
+      cwlDirName_warp = cbica::makeTempDir();
+    }
+    cwlDirName_warp = cbica::stringReplace(cwlDir, "\\", "/");
+    if (cwlDirName_warp.substr(cwlDirName_warp.length() - 1) != "/")
+    {
+      cwlDirName_warp += "/";
+    }
+
+    std::string inpFileName = inpDirName_warp + m_exeName + ".yml";
+    std::string cwlFileName = cwlDirName_warp + m_exeName + ".cwl";
+
+    YAML::Node input = YAML::LoadFile(inpFileName);
+    YAML::Node config = YAML::LoadFile(cwlFileName);
+
+    std::string cmd = m_exeName;
+
+    for (YAML::const_iterator it = input.begin(); it != input.end(); ++it) {
+      std::string key = it->first.as<std::string>();
+      std::string value = it->second.as<std::string>();
+
+      std::string laconic = getLaconic(key);
+      if (laconic == "")
+      {
+        std::cerr << "No matching parameter found for '" << key << "'.\n";
+        exit(EXIT_FAILURE);
+      }
+
+      if (!input[key]) {
+        if (config["inputs"][key]["default"]) {
+          value = config["inputs"][key]["default"].as<std::string>();
+        }
+        else {
+          std::cerr << "There is no value specified for parameter'" << key << "'Default is also not specified.\n";
+          exit(EXIT_FAILURE);
+        }
+      }
+      cmd += " -" + laconic + " " + value;
+    }
+
+    logCWL(inpFileName, cwlFileName);
+    return cmd;
+  }
+
+  void CmdParser::readCWLFile(const std::string &path_to_CWL_File, bool getDescription)
+  {
+    if (!checkMaxLen)
+    {
+      getMaxLength();
+    }
+
+    std::string dirName_wrap;
+    if (!cbica::directoryExists(path_to_CWL_File) || (path_to_CWL_File.empty()))
+    {
+      dirName_wrap = cbica::makeTempDir();
+    }
+    dirName_wrap = cbica::stringReplace(path_to_CWL_File, "\\", "/");
+    if (dirName_wrap.substr(dirName_wrap.length() - 1) != "/")
+    {
+      dirName_wrap += "/";
+    }
+
+    std::string cwlfileName = dirName_wrap + m_exeName + ".cwl";
+
+    YAML::Node config = YAML::LoadFile(cwlfileName);
+
+    std::vector<Parameter> returnVector;
+
+    if (!config)
+    {
+      std::cerr << "File '" << path_to_CWL_File << "' not found.\n";
+      exit(EXIT_FAILURE);
+    }
+    std::string line;
+
+    std::string parameter, parameterDataType, parameterDataRange, parameterDescription = "";
+
+    YAML::Node characterType = config["inputs"];
+
+    bool optional = false;
+    int con = 0;
+    for (YAML::const_iterator it = characterType.begin(); it != characterType.end(); ++it) {
+      std::string key = it->first.as<std::string>();
+      std::string verbose = key;
+
+      std::string laconic = config["inputs"][key]["inputBinding"]["prefix"].as<std::string>();
+
+      laconic.erase(std::remove(laconic.begin(), laconic.end(), '-'), laconic.end());
+
+
+      std::string dataRange = config["inputs"][key]["label"].as<std::string>();
+      std::string desc1 = config["inputs"][key]["doc"].as<std::string>();
+
+      std::string dataType = config["inputs"][key]["type"].as<std::string>();
+
+      if (dataType.find('?') != std::string::npos)
+        optional = TRUE;// find
+      else
+        optional = FALSE;// not find
+
+      cbica::Parameter::Type type;
+
+      if (dataType == "File") {
+        type = cbica::Parameter::FILE;
+      }
+      else if (dataType == "Directory")
+      {
+        type = cbica::Parameter::DIRECTORY;
+      }
+      else if (dataType == "string")
+      {
+        type = cbica::Parameter::STRING;
+      }
+      else if (dataType == "int")
+      {
+        type = cbica::Parameter::INTEGER;
+      }
+      else if (dataType == "float")
+      {
+        type = cbica::Parameter::FLOAT;
+      }
+      else if (dataType == "boolean")
+      {
+        type = cbica::Parameter::BOOLEAN;
+      }
+      else {
+        type = cbica::Parameter::NONE;
+      }
+
+
+      if (optional)
+        addOptionalParameter(laconic, verbose, type, dataRange, desc1);
+      else {
+        //std::cout << laconic << verbose << type << dataRange << desc1 << std::endl;
+        addRequiredParameter(laconic, verbose, type, dataRange, desc1);
+      }
+
+      con++;
+    }
+    exampleUsage("-d C:/here/is/my/Data/ -i fixed,moving -o output");
+
+    std::ofstream fout("d:\\Hellow.cwl");
+    fout << config;
+  }
+
+  void CmdParser::createNode(const std::string & nodeString)
+  {
+    YAML::Node rootNode;
+    if (!rootNode)
+    {
+      std::cerr << "Root node is empty\n";
+      exit(EXIT_FAILURE);
+    }
+
+    YAML::Node node = rootNode[nodeString];
+
+    return;
+  }
+
+  void CmdParser::deleteNode(const std::string & nodeString)
+  {
+    YAML::Node parent;
+    if (!parent)
+    {
+      std::cerr << "Root node is empty\n";
+      exit(EXIT_FAILURE);
+    }
+
+    //parent[nodeString].remove;
+    return;
+  }
+
+  void CmdParser::addInputs(const std::string & param)
+  {
+    YAML::Node rootNode;
+    if (!rootNode)
+    {
+      std::cerr << "Root node is empty\n";
+      exit(EXIT_FAILURE);
+    }
+
+    rootNode["inputs"][param];
+    return;
+  }
+
+  void CmdParser::addOutputs(const std::string & param)
+  {
+    YAML::Node rootNode;
+    if (!rootNode)
+    {
+      std::cerr << "Root node is empty\n";
+      exit(EXIT_FAILURE);
+    }
+
+    rootNode["outputs"][param];
+    return;
+  }
+
+  std::string CmdParser::checkDefault(const std::string & param)
+  {
+    YAML::Node input;
+    std::string defaultValue = "";
+    if (input[param]["default"]) {
+      defaultValue = (input[param]["default"]).as<std::string>();;
+    }
+    return defaultValue;
+  }
+
+  void CmdParser::cwlrunner(const std::string & cwl_spec_path, const std::string & cwl_input_path, bool getDefaultFlag)
+  {
+    std::string cmd = "cwl-runner ";
+    if (!getDefaultFlag) {
+      cmd += cwl_spec_path + " " + cwl_input_path;
+    }
+    cmd += cwl_spec_path;
+    system(cmd.c_str());
+    //ShellExecute(0, "open", "cmd.exe", cmd.c_str(), 0, SW_HIDE);;
+  }
+
+  std::string CmdParser::getLaconic(const std::string & execParamToCheck)
+  {
+    int noMoreChecks = 0; // ensures that extra checks are not done for parameters
+    if (execParamToCheck.empty())
+    {
+      std::cerr << "Parameter cannot be an empty string. Please try again.\n";
+      exit(EXIT_FAILURE);
+    }
+    if (!checkMaxLen)
+    {
+      getMaxLength();
+    }
+
+    size_t i = 0;
+    while ((i < m_requiredParameters.size()) && (noMoreChecks < 1))
+    {
+      if ((m_requiredParameters[i].verbose == execParamToCheck))
+      {
+        return m_requiredParameters[i].laconic;
+        noMoreChecks = 1;
+      }
+      i++;
+    }
+
+    i = 0;
+    while ((i < m_optionalParameters.size()) && (noMoreChecks < 1))
+    {
+      if ((m_optionalParameters[i].verbose == execParamToCheck))
+      {
+        return m_optionalParameters[i].laconic;
+        noMoreChecks = 1;
+      }
+      i++;
+    }
+    return "";
+  }
+
+  void CmdParser::logCWL(const std::string &inpFileName, const std::string &cwlFileName) {
+
+    //create a timecode specific folder
+    // current date/time based on current system
+    time_t now = time(0);
+
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &now);
+
+    // print various components of tm structure.
+    std::cout << "Year: " << 1900 + timeinfo.tm_year << std::endl;
+    int Y = 1900 + timeinfo.tm_year;
+    std::cout << "Month: " << 1 + timeinfo.tm_mon << std::endl;
+    int M = 1 + timeinfo.tm_mon;
+    std::cout << "Day: " << timeinfo.tm_mday << std::endl;
+    int D = timeinfo.tm_mday;
+    std::cout << "Time: " << 1 + timeinfo.tm_hour << ":";
+    int H = timeinfo.tm_hour;
+    std::cout << 1 + timeinfo.tm_min << ":";
+    int Mi = timeinfo.tm_min;
+    std::cout << 1 + timeinfo.tm_sec << std::endl;
+    int S = 1 + timeinfo.tm_sec;
+
+    std::string timestampStr;
+    std::stringstream convD, convM, convY, convH, convMi, convS;
+    convD << D;
+    convM << M;
+    convY << Y;
+    convH << H;
+    convMi << Mi;
+    convS << S;
+    std::cout << "Timestamp:" << std::endl;
+    timestampStr = convD.str() + '.' + convM.str() + '.' + convY.str() + '-' + convH.str() + ':' + convMi.str() + ':' + convS.str();
+    std::cout << timestampStr << std::endl;
+
+    namespace fs = std::experimental::filesystem;
+    fs::path inpSourceFile = inpFileName;
+    fs::path cwlSourceFile = cwlFileName;
+    fs::path targetParent = "m_exeName/" + timestampStr;
+    auto target1 = targetParent / inpSourceFile.filename(); // sourceFile.filename() returns "sourceFile.ext".
+    auto target2 = targetParent / cwlSourceFile.filename();
+    try // If you want to avoid exception handling, then use the error code overload of the following functions.
+    {
+      fs::create_directories(targetParent); // Recursively create target directory if not existing.
+      fs::copy_file(inpSourceFile, target1, fs::copy_options::overwrite_existing);
+      fs::create_directories(targetParent); // Recursively create target directory if not existing.
+      fs::copy_file(cwlSourceFile, target2, fs::copy_options::overwrite_existing);
+    }
+    catch (std::exception& e) // Not using fs::filesystem_error since std::bad_alloc can throw too.  
+    {
+      std::cout << e.what();
+    }
+  }
+  */
 
   void CmdParser::writeConfigFile(const std::string &dirName)
   {

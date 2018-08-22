@@ -29,6 +29,8 @@ See COPYING file or http://www.med.upenn.edu/sbia/software/license.html
 #include <memory.h>
 #include <map>
 #include <random>
+#include <iomanip>
+#include <limits>
 
 #if _WIN32
 #include <process.h>
@@ -352,6 +354,13 @@ namespace cbica
   */
   size_t getFileSize(const std::string &inputFile);
 
+  /*
+  \brief Checks for the compatibility with the current project
+
+  \param inputVersionFile The version file (in YAML) that contains the compatibility information 
+  */
+  bool IsCompatible(const std::string inputVersionFile);
+
   /**
   \brief Get the size of the folder
 
@@ -372,6 +381,25 @@ namespace cbica
   \param rootFolder The input folder
   */
   size_t getDirectorySize(const std::string &rootFolder);
+
+  /**
+  \brief Get size of total physical memory (in bytes) in machine
+  */
+  size_t getTotalMemory();
+
+  /**
+  \brief Get size of physical memory being used (in bytes) in machine
+
+  Ref: https://stackoverflow.com/a/64166
+  */
+  size_t getCurrentlyUsedMemory();
+
+  /**
+  \brief Get size of physical memory being used (in bytes) in machine by the current process
+
+  Ref: https://stackoverflow.com/a/64166
+  */
+  size_t getCurrentlyUsedMemoryByCurrentProcess();
 
   /**
   \brief Gets the extension of the supplied file name using splitFileName()
@@ -774,6 +802,7 @@ namespace cbica
   Base implementation from https://www.digitalpeer.com/blog/simple-text-processing-with-cpp-dos2unix-example
   */
   void dos2unix(const std::string inputFile);
+
   //==================================== Template stuff ==================================//
 
   /**
@@ -837,7 +866,7 @@ namespace cbica
     return return_vector;
   }
 
-#if (_MSC_VER >= 1800) || __GXX_EXPERIMENTAL_CXX0X__ || (__GNUC__ > 4)
+#if (_MSC_VER >= 1800) || (__cplusplus >= 201103L)
   /**
   \brief Base for compareEqual(...)
   */
@@ -890,6 +919,19 @@ namespace cbica
   bool compareLesser(const A x, const B y, Others const ... args)
   {
     return (x < y) && compareLesser(y, args...);
+  }
+
+  /**
+  \brief Convert to string with precision
+
+  Useful when std::to_string truncates doubles
+  */
+  template< typename TDataType = double >
+  std::string to_string_precision(const TDataType a_value, const int n = 10)
+  {
+    std::ostringstream out;
+    out << std::setprecision(n) << a_value;
+    return out.str();
   }
 
 #endif
