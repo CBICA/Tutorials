@@ -13,7 +13,7 @@ ADD_EXECUTABLE(
   ${TEST_EXE_NAME}
   testExe.cxx 
   ${PROJECT_SOURCE_DIR}/src/BasicApp.h
-  ${PROJECT_SOURCE_DIR}/src/cbicaITKWriteImage.h
+  ${PROJECT_SOURCE_DIR}/src/cbicaITKSafeImageIO.h
   ${PROJECT_SOURCE_DIR}/src/cbicaUtilities.h
   ${PROJECT_SOURCE_DIR}/src/cbicaUtilities.cpp
   ${PROJECT_SOURCE_DIR}/src/cbicaCmdParser.h

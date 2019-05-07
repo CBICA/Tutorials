@@ -14,7 +14,7 @@ INCLUDE( ${ITK_USE_FILE} )
 ADD_EXECUTABLE(
   ${EXE_NAME} 
   ${PROJECT_SOURCE_DIR}/src/BasicApp.h
-  ${PROJECT_SOURCE_DIR}/src/cbicaITKWriteImage.h
+  ${PROJECT_SOURCE_DIR}/src/cbicaITKSafeImageIO.h
   ${PROJECT_SOURCE_DIR}/src/cbicaUtilities.h
   ${PROJECT_SOURCE_DIR}/src/cbicaUtilities.cpp
   ${PROJECT_SOURCE_DIR}/src/cbicaCmdParser.h
