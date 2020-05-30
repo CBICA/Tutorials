@@ -10,8 +10,6 @@ The documentation provided with these packages, though extensive, assume a certa
 
 Here we will be focusing on how someone with a good theoretical background in image processing and machine learning can quickly prototype algorithms using CPP and extend them to create meaningful software packages.
 
-<b>NOTE:</b> To download any of the tutorials, you will need an SVN client (Windows users can turn to <a href="https://tortoisesvn.net/">Tortoise SVN</a>). Please copy the link and do an <a href="http://vegastrike.sourceforge.net/wiki/HowTo:Checkout_SVN">SVN checkout</a> (this will be covered in detail in the first tutorial) with username and password set to 'anonymous'.
-
 There will be more tutorials as and when we finalize the topics. Please contact us at <a href="mailto:tutorials@cbica.upenn.edu">tutorials[at]cbica[dot]upenn[dot]edu</a> for topic suggestions and questions.
 
 <br><br>
